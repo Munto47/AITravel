@@ -1,0 +1,62 @@
+'use client'
+
+import { useState, useCallback } from 'react'
+
+import type { Itinerary } from '@/types/itinerary'
+import type { Place } from '@/types/place'
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+interface UseOptimizeReturn {
+  itinerary: Itinerary | null
+  isOptimizing: boolean
+  totalDistanceKm: number
+  optimize: (places: Place[], tripDays: number) => Promise<void>
+}
+
+export function useOptimize(threadId: string): UseOptimizeReturn {
+  const [itinerary, setItinerary] = useState<Itinerary | null>(null)
+  const [isOptimizing, setIsOptimizing] = useState(false)
+  const [totalDistanceKm, setTotalDistanceKm] = useState(0)
+
+  const optimize = useCallback(async (places: Place[], tripDays: number) => {
+    if (isOptimizing || places.length === 0) return
+    setIsOptimizing(true)
+
+    try {
+      const response = await fetch(`${API_BASE}/api/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          thread_id: threadId,
+          places: places.map((p) => ({
+            place_id: p.placeId,
+            name: p.name,
+            category: p.category,
+            address: p.address,
+            coords: p.coords,
+            city: p.city,
+            source: p.source,
+            amap_rating: p.amapRating,
+            amap_price: p.amapPrice,
+            amap_photos: p.amapPhotos,
+            estimated_duration: p.estimatedDuration,
+          })),
+          trip_days: tripDays,
+        }),
+      })
+
+      if (!response.ok) throw new Error(`排线失败：${response.status}`)
+
+      const data = await response.json()
+      setItinerary(data.itinerary)
+      setTotalDistanceKm(data.total_distance_km)
+    } catch (err) {
+      console.error('[useOptimize]', err)
+    } finally {
+      setIsOptimizing(false)
+    }
+  }, [threadId, isOptimizing])
+
+  return { itinerary, isOptimizing, totalDistanceKm, optimize }
+}

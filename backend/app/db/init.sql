@@ -1,0 +1,54 @@
+-- PostgreSQL + pgvector 初始化脚本
+-- 由 docker-compose 在 postgres 容器首次启动时执行
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- =============================================
+-- 游记分块表（RAG 核心数据）
+-- =============================================
+CREATE TABLE IF NOT EXISTS travel_notes_chunks (
+    id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    note_id    TEXT NOT NULL,              -- 关联原始游记 ID
+    chunk_idx  INT  NOT NULL,              -- 该游记内的分块序号
+    city       TEXT NOT NULL,             -- 城市（用于过滤检索范围）
+    content    TEXT NOT NULL,             -- 分块文本内容
+    place_ids  TEXT[]   DEFAULT '{}',     -- 关联的高德 POI IDs（Entity Linking 结果）
+    embedding  vector(1536),              -- text-embedding-3-small 维度
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 城市过滤索引（检索时 WHERE city = $2）
+CREATE INDEX IF NOT EXISTS idx_chunks_city ON travel_notes_chunks(city);
+
+-- pgvector IVFFlat 索引（向量相似度检索）
+-- lists 参数：约为 sqrt(行数)，80篇游记约800条chunks，设为10
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding
+    ON travel_notes_chunks USING ivfflat (embedding vector_cosine_ops)
+    WITH (lists = 10);
+
+-- =============================================
+-- 原始游记元数据表
+-- =============================================
+CREATE TABLE IF NOT EXISTS travel_notes (
+    id         TEXT PRIMARY KEY,          -- 游记唯一 ID（nanoid）
+    title      TEXT,
+    city       TEXT,
+    author     TEXT DEFAULT '旅行者',
+    content    TEXT,
+    tags       TEXT[]   DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
+-- 房间状态表（协同房间的元数据持久化）
+-- =============================================
+CREATE TABLE IF NOT EXISTS rooms (
+    room_id    TEXT PRIMARY KEY,
+    thread_id  TEXT NOT NULL,             -- 对应 LangGraph PostgresSaver 的 thread_id
+    trip_city  TEXT,
+    trip_days  INT  DEFAULT 3,
+    phase      TEXT DEFAULT 'exploring',  -- exploring / selecting / optimizing / planned
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
