@@ -16,7 +16,7 @@ TODO (Sprint 2-3 完善):
 """
 
 import json
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.state import AgentState
@@ -44,9 +44,10 @@ _llm = None
 def get_llm():
     global _llm
     if _llm is None:
-        _llm = ChatAnthropic(
-            model="claude-sonnet-4-6",
-            api_key=settings.anthropic_api_key,
+        _llm = ChatOpenAI(
+            model="gpt-4o",
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_api_url,
             max_tokens=1000,
         )
     return _llm

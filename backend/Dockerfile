@@ -1,12 +1,15 @@
-FROM python:3.11-slim
+# 使用 Alpine + apk，避免 deb.debian.org 在部分网络下 502。
+# numpy / scikit-learn 等如缺轮子在构建期需编译，保留 g++ 与数值库头文件。
+ARG PYTHON_BASE_IMAGE=python:3.11-alpine
+FROM ${PYTHON_BASE_IMAGE}
 
 WORKDIR /app
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache \
+    gcc g++ musl-dev linux-headers \
+    postgresql-dev \
+    openblas-dev lapack-dev gfortran \
+    jpeg-dev zlib-dev
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

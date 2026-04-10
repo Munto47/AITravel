@@ -12,7 +12,7 @@ Router 节点：意图分类 + 查询改写
 
 import json
 import re
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.state import AgentState
@@ -40,9 +40,10 @@ _llm = None
 def get_llm():
     global _llm
     if _llm is None:
-        _llm = ChatAnthropic(
-            model="claude-haiku-4-5-20251001",  # 用 Haiku 做分类，成本低速度快
-            api_key=settings.anthropic_api_key,
+        _llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_api_url,
             max_tokens=200,
         )
     return _llm
