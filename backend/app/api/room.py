@@ -1,33 +1,37 @@
 """
 GET /api/room/{room_id}/state - 房间状态查询
+POST /api/room              - 创建房间
 
-用于前端初始化时获取房间元数据（thread_id 等）。
-Yjs 协同数据存在 y-websocket，此接口只返回元数据。
+房间元数据持久化到 PostgreSQL rooms 表（schema 见 db/init.sql）。
+place_count 字段由 Yjs 层管理，后端固定返回 0。
 """
 
 from fastapi import APIRouter, HTTPException
 
+from app.db.connection import get_pool
 from app.schemas.api import RoomStateResponse
 
 router = APIRouter()
-
-# 内存存储（开发阶段，Sprint 4 替换为 PostgreSQL）
-_rooms: dict[str, dict] = {}
 
 
 @router.get("/room/{room_id}/state", response_model=RoomStateResponse)
 async def get_room_state(room_id: str):
     """获取房间状态元数据"""
-    if room_id not in _rooms:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT room_id, thread_id, phase, trip_city, trip_days FROM rooms WHERE room_id = $1",
+            room_id,
+        )
+    if not row:
         raise HTTPException(status_code=404, detail=f"房间 {room_id} 不存在")
-    room = _rooms[room_id]
-    return RoomStateResponse(**room)
+    return RoomStateResponse(**dict(row), place_count=0)
 
 
 @router.post("/room")
 async def create_room(body: dict):
     """
-    创建新房间。
+    创建新房间（幂等）。
 
     请求体：{room_id, thread_id, trip_city?, trip_days?}
     """
@@ -36,12 +40,17 @@ async def create_room(body: dict):
     if not room_id or not thread_id:
         raise HTTPException(status_code=400, detail="room_id 和 thread_id 必填")
 
-    _rooms[room_id] = {
-        "room_id": room_id,
-        "thread_id": thread_id,
-        "phase": "exploring",
-        "trip_city": body.get("trip_city"),
-        "trip_days": body.get("trip_days", 3),
-        "place_count": 0,
-    }
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO rooms (room_id, thread_id, trip_city, trip_days, phase)
+            VALUES ($1, $2, $3, $4, 'exploring')
+            ON CONFLICT (room_id) DO NOTHING
+            """,
+            room_id,
+            thread_id,
+            body.get("trip_city"),
+            body.get("trip_days", 3),
+        )
     return {"status": "ok", "room_id": room_id}

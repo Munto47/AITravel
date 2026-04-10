@@ -1,17 +1,35 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import chat, optimize, room
+from app.db.connection import get_pool, close_pool
+from app.agents import graph as agent_graph
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
+    await get_pool()                          # 预热 asyncpg 连接池
+    await agent_graph.init_persistent_graph() # 初始化持久化图（建 checkpoint 表）
+    yield
+    # shutdown
+    await agent_graph.close_checkpointer()
+    await close_pool()
+
 
 app = FastAPI(
     title="AI 智能旅行协同规划系统",
     description="基于 LangGraph 多 Agent + Yjs 实时协同的旅行规划 MVP",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000",
+                   "http://localhost:3001", "http://127.0.0.1:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

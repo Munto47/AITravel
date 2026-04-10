@@ -1,88 +1,285 @@
 """
-游记入库脚本骨架
+游记入库脚本
 
-用法：python -m scripts.ingest_notes
+用法：
+  # 容器内（推荐）
+  docker compose exec backend python -m scripts.ingest_notes
 
-TODO (Sprint 3 完整实现):
-1. 调用 LLM 批量生成游记 JSON（北京/上海/成都/厦门各 20 篇）
-2. Entity Linking：地点名 → 高德 POI ID
-3. 分块（chunk_size=500, overlap=50）+ Embedding
-4. 写入 pgvector
+  # 本地（需先设置环境变量）
+  cd backend && python -m scripts.ingest_notes
+
+流程：
+  1. 调用 LLM 批量生成游记（成都/北京/上海/厦门各 20 篇）
+  2. Entity Linking：地点名 → 高德 POI ID（AMAP_MOCK=true 时跳过）
+  3. 文本分块（chunk_size=500, overlap=50）+ text-embedding-3-small Embedding
+  4. 批量写入 pgvector（travel_notes + travel_notes_chunks 表）
 """
 
 import asyncio
 import json
-import uuid
+import re
+import sys
 from pathlib import Path
 
-# ===== 游记数据示例（Sprint 3 用 LLM 批量生成替换）=====
-SAMPLE_NOTES = [
-    {
-        "id": "note-cd-001",
-        "title": "成都 3 日亲子游全攻略",
-        "city": "成都",
-        "content": """第一天去熊猫基地，建议早上 8 点前到，大熊猫在早晨最活跃。
-门口有很多黄牛卖票，不要上当，直接官网预约。
-里面很大，建议带婴儿车，否则孩子走累了很麻烦。
-下午去春熙路和太古里逛逛，这里购物方便，周边餐厅也多。
-推荐吃芙蓉树下的串串，份量足，价格实惠，老店排队但值得等。
+import asyncpg
+import aiohttp
+from openai import AsyncOpenAI
 
-第二天去都江堰，离市区约 1 小时车程，建议打车或拼车。
-景区内爬山路段较多，带老人和孩子要注意安全，穿舒适的鞋。
-午饭在景区外面吃，比里面便宜一半，有正宗的土鸡汤。
-下午可以去青城山，但山路较陡，不适合带婴儿车的家庭。
+# 让脚本能 import app 模块
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-第三天宽窄巷子，人很多但值得去感受成都烟火气。
-窄巷子有很多特色小吃，糖油果子必吃，一串 5 元。
-注意：宽巷子商业化较重，推荐重点逛窄巷子和井巷子。
-下午锦里也可以逛逛，里面有三国文化元素，孩子会喜欢。""",
-        "tags": ["亲子", "成都", "熊猫基地", "宽窄巷子"],
-        "places_mentioned": ["熊猫基地", "春熙路", "太古里", "都江堰", "青城山", "宽窄巷子", "锦里"],
-    }
-]
+from app.config import settings
 
-GENERATE_PROMPT = """生成一篇真实感强的{city} {days}日游记，要求：
-1. 包含具体地点名称（使用当地常见景点/餐厅名）
-2. 包含至少 3 条具体避坑经验（如"xx景点北门排队少，建议走北门"）
-3. 包含适合人群描述（亲子/带老人/年轻人/情侣）
-4. 字数 800-1000 字，第一人称叙述
-返回 JSON：{{"id": "note-{city_en}-{idx:03d}", "title": "...", "city": "{city}", "content": "...", "tags": [...], "places_mentioned": [地点名列表]}}
-不要包含其他文字。"""
+# ===== 配置 =====
+CITIES = {
+    "成都": "cd",
+    "北京": "bj",
+    "上海": "sh",
+    "厦门": "xm",
+}
+NOTES_PER_CITY = 20
+PERSONAS = ["亲子游", "情侣旅行", "带老人出行", "背包客独游", "闺蜜旅行"]
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 50
+EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_BATCH = 50   # 每批 Embedding 数量
 
 
-async def generate_notes():
-    """TODO: Sprint 3 实现 - 调用 LLM 批量生成游记"""
-    print("TODO: 使用 SAMPLE_NOTES 占位，Sprint 3 用 LLM 批量生成")
-    return SAMPLE_NOTES
+# ===== Step 1：LLM 生成游记 =====
+
+GENERATE_PROMPT = """请生成一篇真实感强的{city}{days}日{persona}游记，严格要求：
+1. 包含 5-8 个具体的成都景点/餐厅/街道名称
+2. 包含至少 4 条具体避坑经验（如"xx景点北门排队少，建议走北门入场"）
+3. 字数 800-1000 字，第一人称叙述，口语化风格
+
+必须返回合法 JSON，格式（不要有其他文字）：
+{{"id": "note-{city_en}-{idx:03d}", "title": "标题", "city": "{city}", "content": "游记正文...", "tags": ["标签1","标签2"], "places_mentioned": ["地点1","地点2","..."]}}"""
 
 
-async def entity_linking(note: dict) -> dict:
-    """TODO: Sprint 3 实现 - 地点名 → 高德 POI ID 关联"""
-    print(f"TODO: Entity Linking for {note['title']}")
-    # 示例：调用高德 POI 搜索，取第一个结果的 id
-    # place_id_map = {}
-    # for place_name in note["places_mentioned"]:
-    #     pois = await amap_client.search_poi(keywords=place_name, city=note["city"])
-    #     if pois:
-    #         place_id_map[place_name] = pois[0]["id"]
-    return note
+async def generate_one_note(
+    client: AsyncOpenAI,
+    city: str,
+    city_en: str,
+    idx: int,
+    semaphore: asyncio.Semaphore,
+) -> dict | None:
+    persona = PERSONAS[idx % len(PERSONAS)]
+    days = [2, 3, 3, 4, 5][idx % 5]
+    prompt = GENERATE_PROMPT.format(
+        city=city, days=days, persona=persona,
+        city_en=city_en, idx=idx,
+    )
+    async with semaphore:
+        try:
+            resp = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1500,
+                temperature=0.8,
+            )
+            raw = resp.choices[0].message.content.strip()
+            # 提取 JSON
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if m:
+                note = json.loads(m.group())
+                print(f"  ✓ 生成：{note.get('title', '?')}")
+                return note
+        except Exception as e:
+            print(f"  ✗ 生成失败（{city} #{idx}）：{e}")
+    return None
 
 
-async def ingest_to_pgvector(note: dict):
-    """TODO: Sprint 3 实现 - 分块 + Embedding + 写入 pgvector"""
-    print(f"TODO: 入库 {note['title']}")
-    # 1. 按句子分块（chunk_size=500, overlap=50）
-    # 2. 调用 OpenAI text-embedding-3-small 获取 embedding
-    # 3. asyncpg 批量插入 travel_notes_chunks
+async def generate_notes(client: AsyncOpenAI) -> list[dict]:
+    print("\n[Step 1] 生成游记...")
+    semaphore = asyncio.Semaphore(5)   # 控制并发避免限速
+    tasks = []
+    for city, city_en in CITIES.items():
+        for idx in range(NOTES_PER_CITY):
+            tasks.append(generate_one_note(client, city, city_en, idx, semaphore))
 
+    results = await asyncio.gather(*tasks)
+    notes = [n for n in results if n is not None]
+    print(f"[Step 1] 完成：{len(notes)}/{len(tasks)} 篇游记生成成功")
+    return notes
+
+
+# ===== Step 2：Entity Linking =====
+
+async def entity_linking(notes: list[dict], session: aiohttp.ClientSession) -> list[dict]:
+    """将 places_mentioned 中的地点名映射到高德 POI ID"""
+    if settings.amap_mock:
+        print("[Step 2] AMAP_MOCK=true，跳过 Entity Linking（place_ids 留空）")
+        for note in notes:
+            note["place_id_map"] = {}
+        return notes
+
+    print("\n[Step 2] Entity Linking（高德 POI 搜索）...")
+    for note in notes:
+        place_id_map = {}
+        for place_name in note.get("places_mentioned", []):
+            try:
+                async with session.get(
+                    "https://restapi.amap.com/v3/place/text",
+                    params={
+                        "key": settings.amap_api_key,
+                        "keywords": place_name,
+                        "city": note["city"],
+                        "output": "json",
+                        "offset": 1,
+                    },
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    data = await resp.json()
+                    if data.get("status") == "1" and data.get("pois"):
+                        place_id_map[place_name] = data["pois"][0]["id"]
+            except Exception:
+                pass
+            await asyncio.sleep(0.1)  # 高德 QPS 限制
+        note["place_id_map"] = place_id_map
+    print(f"[Step 2] Entity Linking 完成")
+    return notes
+
+
+# ===== Step 3：分块 =====
+
+def split_into_chunks(text: str) -> list[dict]:
+    """按段落优先切分，超长段落再按字数切分"""
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    chunks = []
+    current = ""
+    for para in paragraphs:
+        if len(current) + len(para) <= CHUNK_SIZE:
+            current = (current + "\n\n" + para).strip()
+        else:
+            if current:
+                chunks.append(current)
+            # 超长单段落按字数切
+            if len(para) > CHUNK_SIZE:
+                for start in range(0, len(para), CHUNK_SIZE - CHUNK_OVERLAP):
+                    chunks.append(para[start:start + CHUNK_SIZE])
+            else:
+                current = para
+    if current:
+        chunks.append(current)
+    return [{"text": c} for c in chunks if c]
+
+
+# ===== Step 4：Embedding + 写入 pgvector =====
+
+async def ingest_to_pgvector(
+    notes: list[dict],
+    client: AsyncOpenAI,
+    pool: asyncpg.Pool,
+):
+    print(f"\n[Step 3] Embedding + 写入 pgvector（共 {len(notes)} 篇）...")
+
+    # 预先收集所有 chunk（带 note 引用）
+    all_items = []
+    for note in notes:
+        chunks = split_into_chunks(note["content"])
+        for idx, chunk in enumerate(chunks):
+            all_items.append({
+                "note_id": note["id"],
+                "chunk_idx": idx,
+                "city": note["city"],
+                "text": chunk["text"],
+                "place_ids": [
+                    note["place_id_map"].get(pname, "")
+                    for pname in note.get("places_mentioned", [])
+                    if note.get("place_id_map", {}).get(pname)
+                ],
+                "note": note,
+            })
+
+    print(f"  分块完成：{len(all_items)} 个 chunk，开始 Embedding...")
+
+    # 按批 Embedding
+    embeddings = []
+    for i in range(0, len(all_items), EMBEDDING_BATCH):
+        batch = all_items[i:i + EMBEDDING_BATCH]
+        try:
+            resp = await client.embeddings.create(
+                model=EMBEDDING_MODEL,
+                input=[item["text"] for item in batch],
+            )
+            embeddings.extend([e.embedding for e in resp.data])
+            print(f"  Embedding 批次 {i // EMBEDDING_BATCH + 1} 完成（{len(batch)} 条）")
+        except Exception as e:
+            print(f"  ✗ Embedding 失败（批次 {i // EMBEDDING_BATCH + 1}）：{e}")
+            # 用零向量占位，不中断整体流程
+            embeddings.extend([[0.0] * 1536] * len(batch))
+
+    # 写入数据库
+    async with pool.acquire() as conn:
+        # 先写 travel_notes 表
+        note_ids_written = set()
+        for item in all_items:
+            note = item["note"]
+            if note["id"] not in note_ids_written:
+                await conn.execute(
+                    """INSERT INTO travel_notes (id, title, city, content, tags)
+                       VALUES ($1, $2, $3, $4, $5)
+                       ON CONFLICT (id) DO NOTHING""",
+                    note["id"], note.get("title", ""),
+                    note["city"], note["content"],
+                    note.get("tags", []),
+                )
+                note_ids_written.add(note["id"])
+
+        # 再写 travel_notes_chunks 表（含 embedding）
+        for item, embedding in zip(all_items, embeddings):
+            await conn.execute(
+                """INSERT INTO travel_notes_chunks
+                   (note_id, chunk_idx, city, content, place_ids, embedding)
+                   VALUES ($1, $2, $3, $4, $5, $6::vector)
+                   ON CONFLICT DO NOTHING""",
+                item["note_id"], item["chunk_idx"], item["city"],
+                item["text"], item["place_ids"], embedding,
+            )
+
+    print(f"[Step 3] 写入完成：{len(note_ids_written)} 篇游记，{len(all_items)} 个 chunk")
+
+
+# ===== 主流程 =====
 
 async def main():
-    print("=== 游记入库脚本（骨架）===")
-    notes = await generate_notes()
-    for note in notes:
-        linked = await entity_linking(note)
-        await ingest_to_pgvector(linked)
-    print(f"处理完成：{len(notes)} 篇游记")
+    print("=== 游记入库脚本 ===")
+    print(f"目标：{list(CITIES.keys())} 各 {NOTES_PER_CITY} 篇，共 {len(CITIES) * NOTES_PER_CITY} 篇")
+
+    if not settings.openai_api_key:
+        print("错误：OPENAI_API_KEY 未配置，无法生成游记")
+        return
+
+    client = AsyncOpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_api_url,
+    )
+
+    # 初始化连接池（不用 register_vector，ingest 脚本直接传 list）
+    dsn = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+    pool = await asyncpg.create_pool(dsn, min_size=2, max_size=5)
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            notes = await generate_notes(client)
+            if not notes:
+                print("没有生成任何游记，退出")
+                return
+            notes = await entity_linking(notes, session)
+            await ingest_to_pgvector(notes, client, pool)
+
+        # 打印统计
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT city, count(*) AS cnt FROM travel_notes_chunks GROUP BY city ORDER BY city"
+            )
+            print("\n=== 入库统计 ===")
+            for row in rows:
+                print(f"  {row['city']}: {row['cnt']} 个 chunk")
+    finally:
+        await pool.close()
+
+    print("\n=== 入库完成 ===")
 
 
 if __name__ == "__main__":

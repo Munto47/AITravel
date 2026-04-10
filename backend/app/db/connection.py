@@ -6,6 +6,7 @@ TODO (Sprint 1): 配置 asyncpg 连接池
 """
 
 import asyncpg
+from pgvector.asyncpg import register_vector
 from app.config import settings
 
 _pool = None
@@ -17,7 +18,8 @@ async def get_pool() -> asyncpg.Pool:
     if _pool is None:
         # asyncpg 使用 postgresql:// 格式（不带 +asyncpg）
         dsn = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-        _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10)
+        # init=register_vector 使所有连接自动支持 pgvector 类型，无需每次手动注册
+        _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10, init=register_vector)
     return _pool
 
 
