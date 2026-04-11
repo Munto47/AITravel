@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     user_id: str
     message: str
     selected_place_ids: list[str] = []
+    trip_city: Optional[str] = None   # 房间目的地城市，用于 AmapSearch 精确检索
 
 
 # SSE 事件类型（以 text/event-stream 格式推送）

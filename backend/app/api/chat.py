@@ -33,6 +33,7 @@ async def _event_stream(request: ChatRequest):
         "messages": [HumanMessage(content=request.message)],
         "thread_id": request.thread_id,
         "user_id": request.user_id,
+        "trip_city": request.trip_city,   # 目的地城市，传递给 AmapSearch 节点
         "amap_places": [],
         "rag_chunks": [],
         "synthesized_places": [],

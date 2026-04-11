@@ -2,13 +2,13 @@
 LangGraph 主图定义
 
 结构：
-  Router → (conditional) → AmapSearch / RAGRetrieval → Synthesizer → END
+  Router → (conditional) → AmapSearch → (conditional) → RAGRetrieval → Synthesizer
+                        → RAGRetrieval → Synthesizer
 
-节点说明：
-- router:        意图分类（rag / amap / both）
-- amap_search:   高德 POI 搜索
-- rag_retrieval: pgvector 游记检索
-- synthesizer:   数据合并 + 回复生成
+路由逻辑：
+- intent=amap  → router → amap_search → synthesizer
+- intent=rag   → router → rag_retrieval → synthesizer
+- intent=both  → router → amap_search → rag_retrieval → synthesizer
 
 Optimizer 不在此图中，通过 POST /api/optimize 独立触发。
 """
@@ -21,14 +21,20 @@ from app.config import settings
 
 
 def _route_intent(state: AgentState) -> str:
-    """条件路由：根据 Router 节点写入的 intent 决定下一步"""
+    """Router 节点后的条件路由：根据 intent 决定进入哪个检索节点"""
     intent = state.get("intent", "amap")
     if intent == "rag":
         return "rag_retrieval"
-    elif intent == "both":
-        # 简化策略：both 时先走 amap，后续 Sprint 可改为并行分支
-        return "amap_search"
+    # amap 和 both 都先走 amap_search
     return "amap_search"
+
+
+def _route_after_amap(state: AgentState) -> str:
+    """AmapSearch 节点后的条件路由：both 意图继续走 RAG，否则直接到 Synthesizer"""
+    intent = state.get("intent", "amap")
+    if intent == "both":
+        return "rag_retrieval"
+    return "synthesizer"
 
 
 def build_graph(checkpointer=None):
@@ -44,7 +50,7 @@ def build_graph(checkpointer=None):
     # 入口
     g.set_entry_point("router")
 
-    # 条件路由
+    # Router → AmapSearch / RAGRetrieval（amap/both 走 amap，rag 走 rag）
     g.add_conditional_edges(
         "router",
         _route_intent,
@@ -54,8 +60,17 @@ def build_graph(checkpointer=None):
         },
     )
 
-    # 两条路径都汇入 Synthesizer
-    g.add_edge("amap_search", "synthesizer")
+    # AmapSearch → RAGRetrieval（both 意图）/ Synthesizer（amap 意图）
+    g.add_conditional_edges(
+        "amap_search",
+        _route_after_amap,
+        {
+            "rag_retrieval": "rag_retrieval",
+            "synthesizer": "synthesizer",
+        },
+    )
+
+    # RAGRetrieval → Synthesizer（rag 和 both 意图都从这里汇入）
     g.add_edge("rag_retrieval", "synthesizer")
 
     # 结束

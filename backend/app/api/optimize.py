@@ -32,6 +32,7 @@ async def optimize(request: OptimizeRequest):
         places=request.places,
         trip_days=request.trip_days,
         thread_id=request.thread_id,
+        start_date=request.start_date,
     )
 
     # 计算总距离（简单估算，Sprint 4 替换为高德真实数据）

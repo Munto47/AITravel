@@ -12,7 +12,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 interface UseAIChatReturn {
   messages: ChatMessage[]
   isStreaming: boolean
-  sendMessage: (text: string, selectedPlaceIds?: string[]) => Promise<void>
+  sendMessage: (text: string, selectedPlaceIds?: string[], tripCity?: string) => Promise<void>
   clearMessages: () => void
 }
 
@@ -21,7 +21,11 @@ export function useAIChat(threadId: string, userId: string): UseAIChatReturn {
   const [isStreaming, setIsStreaming] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
-  const sendMessage = useCallback(async (text: string, selectedPlaceIds: string[] = []) => {
+  const sendMessage = useCallback(async (
+    text: string,
+    selectedPlaceIds: string[] = [],
+    tripCity?: string,
+  ) => {
     if (isStreaming) return
 
     const userMsg: ChatMessage = {
@@ -58,9 +62,16 @@ export function useAIChat(threadId: string, userId: string): UseAIChatReturn {
           user_id: userId,
           message: text,
           selected_place_ids: selectedPlaceIds,
+          trip_city: tripCity || null,
         }),
         signal: abortRef.current.signal,
       })
+
+      // 非 2xx 响应处理
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '未知错误')
+        throw new Error(`服务器错误 ${response.status}: ${errText.slice(0, 200)}`)
+      }
 
       if (!response.body) throw new Error('无响应体')
 
@@ -134,12 +145,21 @@ export function useAIChat(threadId: string, userId: string): UseAIChatReturn {
           }
         }
       }
+
+      // 流结束后确保状态为 done
+      setMessages((prev) => {
+        const last = prev[prev.length - 1]
+        if (!last || last.role !== 'assistant' || last.status === 'done' || last.status === 'error') return prev
+        return [...prev.slice(0, -1), { ...last, status: 'done' }]
+      })
+
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
+      const errMsg = (err as Error).message || '请求失败，请重试'
       setMessages((prev) => {
         const last = prev[prev.length - 1]
         if (!last || last.role !== 'assistant') return prev
-        return [...prev.slice(0, -1), { ...last, status: 'error', content: '请求失败，请重试' }]
+        return [...prev.slice(0, -1), { ...last, status: 'error', content: errMsg }]
       })
     } finally {
       setIsStreaming(false)

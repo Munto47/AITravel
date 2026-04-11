@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS travel_notes (
 );
 
 -- =============================================
+-- 用户表（持久化用户 ID 与昵称）
+-- =============================================
+CREATE TABLE IF NOT EXISTS users (
+    user_id    TEXT PRIMARY KEY,          -- 前端 localStorage 生成的 UUID
+    nickname   TEXT NOT NULL DEFAULT '旅行者',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
 -- 房间状态表（协同房间的元数据持久化）
 -- =============================================
 CREATE TABLE IF NOT EXISTS rooms (
@@ -51,4 +61,14 @@ CREATE TABLE IF NOT EXISTS rooms (
     phase      TEXT DEFAULT 'exploring',  -- exploring / selecting / optimizing / planned
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
+-- 房间成员表（记录谁加入了哪个房间）
+-- =============================================
+CREATE TABLE IF NOT EXISTS room_members (
+    room_id    TEXT NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    joined_at  TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (room_id, user_id)
 );

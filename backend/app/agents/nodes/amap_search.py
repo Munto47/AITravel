@@ -1,16 +1,15 @@
 """
 AmapSearch 节点：高德 POI 搜索
 
-输入：state.query_rewrite（改写后的查询）, state.messages（从历史中提取城市）
+输入：state.query_rewrite（改写后的查询）, state.trip_city（房间目的地城市）
 输出：state.amap_places（Place 列表）
 
 Mock 模式（AMAP_MOCK=true）：
   从 backend/tests/fixtures/amap_mock_places.json 读取预设数据
-  按城市关键词过滤，返回匹配的地点
 
-真实模式：
+真实模式（AMAP_MOCK=false）：
   调用高德 POI 搜索 API: https://restapi.amap.com/v3/place/text
-  参数: keywords, city, output=json, extensions=all
+  若真实 API 返回空结果，自动降级到 Mock 数据
 """
 
 import json
@@ -60,8 +59,15 @@ def _parse_amap_place(raw: dict, city: str) -> Optional[Place]:
         if not location:
             return None
         lng_str, lat_str = location.split(",")
-        rating_str = raw.get("biz_ext", {}).get("rating", "") if raw.get("biz_ext") else ""
-        price_str = raw.get("biz_ext", {}).get("cost", "") if raw.get("biz_ext") else ""
+
+        # biz_ext 可能是 dict 或空列表（高德 API 特性）
+        biz_ext = raw.get("biz_ext")
+        if not isinstance(biz_ext, dict):
+            biz_ext = {}
+
+        rating_str = biz_ext.get("rating", "")
+        price_str = biz_ext.get("cost", "")
+
         photos = []
         if raw.get("photos"):
             photos = [p.get("url", "") for p in raw["photos"][:3] if p.get("url")]
@@ -71,13 +77,13 @@ def _parse_amap_place(raw: dict, city: str) -> Optional[Place]:
             place_id=raw.get("id", ""),
             name=raw.get("name", ""),
             category=category,
-            address=raw.get("address", ""),
+            address=raw.get("address", "") or "",
             coords=Coordinates(lng=float(lng_str), lat=float(lat_str)),
             city=city,
             district=raw.get("adname"),
             source=PlaceSource.AMAP_POI,
-            amap_rating=float(rating_str) if rating_str and rating_str != [] else None,
-            amap_price=float(price_str) if price_str and price_str != [] else None,
+            amap_rating=float(rating_str) if rating_str and isinstance(rating_str, (int, float, str)) and str(rating_str).replace('.', '', 1).isdigit() else None,
+            amap_price=float(price_str) if price_str and isinstance(price_str, (int, float, str)) and str(price_str).replace('.', '', 1).isdigit() else None,
             opening_hours=raw.get("biz_opentime"),
             phone=raw.get("tel"),
             amap_photos=photos,
@@ -89,14 +95,25 @@ def _parse_amap_place(raw: dict, city: str) -> Optional[Place]:
 
 
 def _extract_city(state: AgentState) -> str:
-    """从对话历史中提取城市名（简单关键词匹配）"""
+    """
+    从 state 中提取城市：
+    1. 优先使用 state.trip_city（从房间元数据传入，最可靠）
+    2. 从对话历史关键词匹配
+    3. 默认成都
+    """
+    # 优先使用 trip_city（从 ChatRequest 传入）
+    trip_city = state.get("trip_city")
+    if trip_city:
+        return trip_city
+
+    # 从对话历史提取
     known_cities = ["北京", "上海", "成都", "厦门", "广州", "深圳", "杭州", "西安", "重庆"]
     for msg in reversed(state["messages"]):
         content = str(msg.content)
         for city in known_cities:
             if city in content:
                 return city
-    return "成都"  # 默认城市（面试 Demo 主城市）
+    return "成都"  # 默认城市
 
 
 async def _fetch_amap_poi(keywords: str, city: str) -> list[Place]:
@@ -114,20 +131,20 @@ async def _fetch_amap_poi(keywords: str, city: str) -> list[Place]:
         async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=8)) as resp:
             data = await resp.json()
             if data.get("status") != "1" or not data.get("pois"):
+                print(f"[AmapSearch] 高德 API 返回空结果：status={data.get('status')}, info={data.get('info')}")
                 return []
             places = [_parse_amap_place(p, city) for p in data["pois"]]
             return [p for p in places if p is not None]
 
 
-def _load_mock_places(city: str, keywords: str) -> list[Place]:
+def _load_mock_places(city: str) -> list[Place]:
     """从本地 fixture 文件加载 Mock 数据"""
     if not MOCK_DATA_PATH.exists():
-        # Fixture 未生成时返回空（后续 Sprint 补充）
         print(f"[AmapSearch] Mock 文件不存在：{MOCK_DATA_PATH}")
         return []
     with open(MOCK_DATA_PATH, "r", encoding="utf-8") as f:
         mock_data = json.load(f)
-    # 优先返回匹配城市的数据
+    # 按城市查找，找不到就用成都
     city_places = mock_data.get(city, mock_data.get("成都", []))
     return [Place(**p) for p in city_places[:8]]
 
@@ -138,13 +155,26 @@ async def run(state: AgentState) -> dict:
     city = _extract_city(state)
 
     if settings.amap_mock or settings.demo_mode:
-        places = _load_mock_places(city, query)
-    else:
-        try:
-            places = await _fetch_amap_poi(query, city)
-        except Exception as e:
-            print(f"[AmapSearch] 高德 API 调用失败：{e}")
-            places = _load_mock_places(city, query)  # 降级到 Mock
+        places = _load_mock_places(city)
+        print(f"[AmapSearch] Mock 模式，city={city}，返回 {len(places)} 个地点")
+        return {"amap_places": places}
+
+    # 真实高德 API 模式
+    if not settings.amap_api_key:
+        print("[AmapSearch] 未配置 AMAP_API_KEY，降级到 Mock")
+        return {"amap_places": _load_mock_places(city)}
+
+    try:
+        places = await _fetch_amap_poi(query, city)
+    except Exception as e:
+        print(f"[AmapSearch] 高德 API 调用异常：{e}，降级到 Mock")
+        places = _load_mock_places(city)
+        return {"amap_places": places}
+
+    # 真实 API 返回空结果时降级到 Mock（避免 query 不匹配导致空列表）
+    if not places:
+        print(f"[AmapSearch] 真实 API 返回空，降级到 Mock，city={city}, query={query}")
+        places = _load_mock_places(city)
 
     print(f"[AmapSearch] city={city}, query={query}, 返回 {len(places)} 个地点")
     return {"amap_places": places}

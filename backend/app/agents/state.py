@@ -16,6 +16,9 @@ class AgentState(TypedDict):
     thread_id: str
     user_id: str
 
+    # 房间目的地城市（从 ChatRequest 传入，确保正确的城市上下文）
+    trip_city: Optional[str]        # 如 "成都"、"北京"
+
     # Router 节点输出
     intent: Optional[str]           # "rag" | "amap" | "both"
     query_rewrite: Optional[str]    # 改写后的查询，更适合检索
