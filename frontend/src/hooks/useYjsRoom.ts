@@ -119,13 +119,17 @@ export function useYjsRoom(
     }
   }, [roomId, userId, nickname, userColor])
 
-  /** 初始化房间元数据（创建房间时调用）*/
+  /** 初始化房间元数据（加入房间时调用，不覆盖已有的 phase）*/
   const initRoom = useCallback((meta: Partial<YjsRoomMeta>) => {
     const doc = docRef.current
     if (!doc) return
     const roomMeta = doc.getMap('room')
     doc.transact(() => {
-      Object.entries(meta).forEach(([k, v]) => roomMeta.set(k, v))
+      Object.entries(meta).forEach(([k, v]) => {
+        // phase 只在尚未设置时才写入，避免覆盖协同中已更新的阶段
+        if (k === 'phase' && roomMeta.get('phase')) return
+        roomMeta.set(k, v)
+      })
     })
   }, [])
 
