@@ -84,8 +84,8 @@ def _parse_amap_place(raw: dict, city: str) -> Optional[Place]:
             source=PlaceSource.AMAP_POI,
             amap_rating=float(rating_str) if rating_str and isinstance(rating_str, (int, float, str)) and str(rating_str).replace('.', '', 1).isdigit() else None,
             amap_price=float(price_str) if price_str and isinstance(price_str, (int, float, str)) and str(price_str).replace('.', '', 1).isdigit() else None,
-            opening_hours=raw.get("biz_opentime"),
-            phone=raw.get("tel"),
+            opening_hours=raw.get("biz_opentime") if isinstance(raw.get("biz_opentime"), str) else None,
+            phone=raw.get("tel") if isinstance(raw.get("tel"), str) else None,
             amap_photos=photos,
             estimated_duration=DEFAULT_DURATION.get(category, 90),
         )

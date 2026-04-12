@@ -148,50 +148,154 @@ async def _get_driving_cached(
 async def _build_time_matrix(
     session: aiohttp.ClientSession, places: list[Place]
 ) -> dict[tuple[str, str], tuple[int, float]]:
-    """构建 (place_id_a, place_id_b) → (duration_mins, distance_km) 矩阵"""
+    """构建 (place_id_a, place_id_b) → (duration_mins, distance_km) 矩阵
+
+    始终使用高德驾车 API（有 key 时），顺序请求避免并发限制。
+    无 key 或 mock 模式时降级为直线距离估算。
+    """
     n = len(places)
-    # N≤6 且有高德 key 时调用真实 API
-    use_amap = n <= 6 and not settings.amap_mock and bool(settings.amap_api_key)
+    use_amap = not settings.amap_mock and bool(settings.amap_api_key)
 
     matrix: dict[tuple[str, str], tuple[int, float]] = {}
+    pairs = [(places[i], places[j]) for i in range(n) for j in range(i + 1, n)]
 
     if use_amap:
-        semaphore = asyncio.Semaphore(3)
-        pairs = [(places[i], places[j]) for i in range(n) for j in range(i + 1, n)]
-
-        async def fetch_pair(pair_a: Place, pair_b: Place) -> tuple[int, float]:
-            return await _get_driving_cached(session, semaphore, pair_a, pair_b)
-
-        results = await asyncio.gather(
-            *[fetch_pair(a, b) for a, b in pairs], return_exceptions=True
-        )
-
-        for (a, b), result in zip(pairs, results):
-            if isinstance(result, Exception):
+        # 顺序请求（Semaphore=1）避免高德 QPS 限制
+        semaphore = asyncio.Semaphore(1)
+        for a, b in pairs:
+            try:
+                result = await _get_driving_cached(session, semaphore, a, b)
+            except Exception:
                 result = _estimate_driving(a, b)
-            matrix[(a.place_id, b.place_id)] = result  # type: ignore[assignment]
-            matrix[(b.place_id, a.place_id)] = result  # type: ignore[assignment]
+            matrix[(a.place_id, b.place_id)] = result
+            matrix[(b.place_id, a.place_id)] = result
     else:
-        for i in range(n):
-            for j in range(i + 1, n):
-                result = _estimate_driving(places[i], places[j])
-                matrix[(places[i].place_id, places[j].place_id)] = result
-                matrix[(places[j].place_id, places[i].place_id)] = result
+        for a, b in pairs:
+            result = _estimate_driving(a, b)
+            matrix[(a.place_id, b.place_id)] = result
+            matrix[(b.place_id, a.place_id)] = result
 
     return matrix
 
 
-# ===== K-Means 聚类 =====
+# ===== K-Means 聚类 + 溢出重新分配 =====
+
+def _centroid(places_in_cluster: list[Place]) -> tuple[float, float]:
+    """计算簇的经纬度质心"""
+    lngs = [p.coords.lng for p in places_in_cluster]
+    lats = [p.coords.lat for p in places_in_cluster]
+    return sum(lngs) / len(lngs), sum(lats) / len(lats)
+
+
+def _dist2d(lng1: float, lat1: float, lng2: float, lat2: float) -> float:
+    """欧氏距离（聚类内部比较用，不需要球面精度）"""
+    return math.sqrt((lng1 - lng2) ** 2 + (lat1 - lat2) ** 2)
+
 
 def _kmeans_cluster(places: list[Place], trip_days: int) -> list[Place]:
-    if len(places) <= trip_days:
+    n = len(places)
+    k = min(trip_days, n)
+
+    # 地点数 <= 天数：每个地点单独一天
+    if n <= trip_days:
         return [p.model_copy(update={"cluster_id": i}) for i, p in enumerate(places)]
 
+    # --- 第一步：K-Means 初聚类 ---
     coords = np.array([[p.coords.lng, p.coords.lat] for p in places])
-    n_clusters = min(trip_days, len(places))
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(coords)
-    return [p.model_copy(update={"cluster_id": int(label)}) for p, label in zip(places, labels)]
+    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+    labels = kmeans.fit_predict(coords).tolist()
+
+    # 用 dict 维护簇成员，方便增删
+    clusters: dict[int, list[int]] = {i: [] for i in range(k)}
+    for idx, label in enumerate(labels):
+        clusters[label].append(idx)
+
+    cap_max = math.ceil(n / k) + 1  # 单日上限
+
+    # --- 第二步：处理空簇（K-Means 偶尔会产生空簇）---
+    # 全局质心作为空簇的临时参考点
+    global_lng = float(np.mean(coords[:, 0]))
+    global_lat = float(np.mean(coords[:, 1]))
+
+    for cid in range(k):
+        if len(clusters[cid]) != 0:
+            continue
+        # 找当前最大的簇，从中摘出距离空簇"全局质心"最近的地点
+        donor = max(clusters, key=lambda c: len(clusters[c]))
+        if not clusters[donor]:
+            continue
+        nearest_idx = min(
+            clusters[donor],
+            key=lambda i: _dist2d(coords[i][0], coords[i][1], global_lng, global_lat),
+        )
+        clusters[donor].remove(nearest_idx)
+        clusters[cid].append(nearest_idx)
+
+    # --- 第三步：溢出重新分配 ---
+    max_iterations = n * k  # 防御性上限，理论上不会到达
+    for _ in range(max_iterations):
+        overfull = [c for c in range(k) if len(clusters[c]) > cap_max]
+        if not overfull:
+            break
+
+        # 取最大的溢出簇
+        src = max(overfull, key=lambda c: len(clusters[c]))
+        src_places = clusters[src]
+
+        # 计算 src 质心
+        src_lng, src_lat = _centroid([places[i] for i in src_places])
+
+        # 找出距离 src 质心最远的地点（候选迁出）
+        evict_idx = max(
+            src_places,
+            key=lambda i: _dist2d(coords[i][0], coords[i][1], src_lng, src_lat),
+        )
+        evict_lng, evict_lat = coords[evict_idx][0], coords[evict_idx][1]
+
+        # 在所有未满的簇中，找质心距离被迁出地点最近的目标簇
+        underfull = [c for c in range(k) if len(clusters[c]) < cap_max and c != src]
+        if not underfull:
+            # 所有簇都满了，改为找最小的簇（放宽条件）
+            underfull = [c for c in range(k) if c != src]
+        if not underfull:
+            break
+
+        dst = min(
+            underfull,
+            key=lambda c: _dist2d(
+                *_centroid([places[i] for i in clusters[c]]),
+                evict_lng,
+                evict_lat,
+            ) if clusters[c] else _dist2d(global_lng, global_lat, evict_lng, evict_lat),
+        )
+
+        # 执行迁移
+        clusters[src].remove(evict_idx)
+        clusters[dst].append(evict_idx)
+
+    # --- 第四步：写回 cluster_id ---
+    result = list(places)  # 保持原顺序，下面逐个更新
+    for cid, member_indices in clusters.items():
+        for idx in member_indices:
+            result[idx] = places[idx].model_copy(update={"cluster_id": cid})
+    return result
+
+
+# ===== 酒店挂载工具 =====
+
+def _time_str_to_mins(t: str) -> int:
+    """'HH:MM' → 分钟数"""
+    h, m = t.split(":")
+    return int(h) * 60 + int(m)
+
+
+def _match_hotel(last_activity: Place, available_hotels: list[Place]) -> Optional[Place]:
+    """从酒店池中找距 last_activity 最近的酒店，原地移除并返回；池空则返回 None"""
+    if not available_hotels:
+        return None
+    hotel = min(available_hotels, key=lambda h: _haversine_km(last_activity, h))
+    available_hotels.remove(hotel)
+    return hotel
 
 
 # ===== TSP =====
@@ -314,10 +418,22 @@ async def run(
 ) -> Itinerary:
     """Optimizer 入口（直接调用，非 LangGraph 节点）"""
     async with aiohttp.ClientSession() as session:
-        # 1. K-Means 聚类
-        clustered = _kmeans_cluster(places, trip_days)
 
-        # 2. 按簇分组（重新连续编号）
+        # ── 0. 数据分离 ──────────────────────────────────────────────────────
+        hotels = [p for p in places if p.category == PlaceCategory.HOTEL]
+        activities = [p for p in places if p.category != PlaceCategory.HOTEL]
+
+        if not activities:
+            raise ValueError("[Optimizer] 没有可排线的游玩地点（activities 为空）")
+
+        # 酒店池：可变副本，每次 _match_hotel 调用后原地移除已分配酒店
+        available_hotels: list[Place] = list(hotels)
+
+        print(f"[Optimizer] 总地点={len(places)}，游玩={len(activities)}，酒店={len(hotels)}，天数={trip_days}")
+
+        # ── 1. 仅对 activities 做 K-Means + 均匀分配 ─────────────────────────
+        clustered = _kmeans_cluster(activities, trip_days)
+
         clusters: dict[int, list[Place]] = {}
         for p in clustered:
             cid = p.cluster_id or 0
@@ -325,27 +441,62 @@ async def run(
 
         sorted_cluster_items = sorted(clusters.items())
 
-        # 3. 计算中心坐标（用于天气查询）
-        center_lat = sum(p.coords.lat for p in places) / len(places)
-        center_lng = sum(p.coords.lng for p in places) / len(places)
+        # ── 2. 全局质心（天气用）────────────────────────────────────────────
+        center_lat = sum(p.coords.lat for p in activities) / len(activities)
+        center_lng = sum(p.coords.lng for p in activities) / len(activities)
 
-        # 4. 确定天气查询范围
         today = date.today()
         weather_enabled = bool(settings.qweather_key) and start_date is not None
 
         day_plans: list[DayPlan] = []
 
         for day_index, (cluster_id, cluster_places) in enumerate(sorted_cluster_items):
-            # 4a. 构建时间矩阵
+
+            # ── 3a. 时间矩阵（只含游玩点）──────────────────────────────────
             time_matrix = await _build_time_matrix(session, cluster_places)
 
-            # 4b. TSP 排线
+            # ── 3b. TSP 排线（只含游玩点）──────────────────────────────────
             ordered = _nearest_neighbor_tsp(cluster_places, time_matrix)
 
-            # 4c. 生成时间表
+            # ── 3c. 生成游玩点时间表 ────────────────────────────────────────
             slots = _generate_time_slots(ordered, time_matrix)
 
-            # 4d. 天气
+            # ── 3d. 酒店挂载（Anchor Matching）─────────────────────────────
+            if slots:
+                sorted_ordered = sorted(ordered, key=lambda p: p.visit_order or 0)
+                last_activity = sorted_ordered[-1]
+                hotel = _match_hotel(last_activity, available_hotels)
+
+                if hotel:
+                    dur_mins, dist_km = _estimate_driving(last_activity, hotel)
+
+                    # 把交通腿写入最后一个游玩 slot
+                    slots[-1] = slots[-1].model_copy(update={
+                        "transport": TransportLeg(
+                            mode="driving",
+                            duration_mins=dur_mins,
+                            distance_km=dist_km,
+                        )
+                    })
+
+                    # 计算酒店 check-in 时间
+                    hotel_start_mins = _time_str_to_mins(slots[-1].end_time) + dur_mins
+                    hotel_end_mins = hotel_start_mins + DEFAULT_DURATION[PlaceCategory.HOTEL]
+                    hotel = hotel.model_copy(update={"cluster_id": day_index, "visit_order": len(slots)})
+
+                    slots.append(TimeSlot(
+                        place_id=hotel.place_id,
+                        place=hotel.model_dump(),
+                        start_time=f"{hotel_start_mins // 60:02d}:{hotel_start_mins % 60:02d}",
+                        end_time=f"{hotel_end_mins // 60:02d}:{hotel_end_mins % 60:02d}",
+                        transport=None,
+                    ))
+
+                    print(f"[Optimizer] Day {day_index + 1}：挂载酒店「{hotel.name}」")
+                else:
+                    print(f"[Optimizer] Day {day_index + 1}：酒店池已耗尽，跳过酒店挂载")
+
+            # ── 3e. 天气 ────────────────────────────────────────────────────
             weather_summary: Optional[WeatherInfo] = None
             day_date_str: Optional[str] = None
 
@@ -371,8 +522,12 @@ async def run(
                 weather_summary=weather_summary,
             ))
 
+        # 多余酒店：cluster_id=-1，不进任何 DayPlan
+        if available_hotels:
+            print(f"[Optimizer] 未分配酒店 {len(available_hotels)} 个：{[h.name for h in available_hotels]}")
+
         day_plans.sort(key=lambda d: d.day_index)
-        city = places[0].city if places else "未知"
+        city = activities[0].city if activities else "未知"
 
         return Itinerary(
             itinerary_id=str(uuid.uuid4()),

@@ -70,7 +70,7 @@ export default function AMapContainer({ places, itinerary, tripCity }: AMapConta
         const AMap = await AMapLoader.load({
           key: jsKey,
           version: '2.0',
-          plugins: ['AMap.InfoWindow', 'AMap.Driving'],
+          plugins: ['AMap.InfoWindow', 'AMap.Driving', 'AMap.MoveAnimation'],
         })
         if (destroyed || !containerRef.current) return
 
@@ -79,7 +79,7 @@ export default function AMapContainer({ places, itinerary, tripCity }: AMapConta
           zoom: 13,
           center: cityCenter,
           mapStyle: 'amap://styles/macaron',
-          viewMode: '2D',
+          viewMode: '3D',     // 3D 模式支持 pitch 俯仰角，相机跟随必须
         })
         mapRef.current = map
         infoWindowRef.current = new AMap.InfoWindow({
@@ -161,117 +161,215 @@ export default function AMapContainer({ places, itinerary, tripCity }: AMapConta
     }
   }, [places])
 
-  // ── 渲染真实驾车路线 + 小车动画 ──────────────────────────────────
+  // ── 渲染真实驾车路线 + 串行小车动画 ─────────────────────────────
   const renderRoutes = useCallback(() => {
     const map = mapRef.current
     if (!map) return
 
-    // 清理上一轮所有资源
+    // ── 清理上一轮所有资源 ────────────────────────────────────────
     drivingInstancesRef.current.forEach((d) => { try { d.clear() } catch (_) {} })
     drivingInstancesRef.current = []
     polylinesRef.current.forEach((p) => { try { p.setMap(null) } catch (_) {} })
     polylinesRef.current = []
-    carMarkersRef.current.forEach((m) => { try { m.stopMove(); m.setMap(null) } catch (_) {} })
-    carMarkersRef.current = []
+    if (carMarkersRef.current.length > 0) {
+      carMarkersRef.current.forEach((m) => { try { m.stopMove() } catch (_) {} })
+      try { map.remove(carMarkersRef.current) } catch (_) {}
+      carMarkersRef.current = []
+    }
 
     if (!itinerary?.days?.length) return
 
     const AMap = (window as any).AMap
     if (!AMap) return
 
-    // 确保 AMap.Driving 插件已加载，再进入路线规划逻辑
+    // ── 全局导航常量（在 moving 过程中绝对禁止修改 Zoom / Pitch）──
+    const NAV_ZOOM        = 16      // 降低缩放，扩大视野，防眩晕
+    const NAV_PITCH       = 45      // 俯仰角，提供 3D 感
+    const ANIMATION_SPEED = 12000   // 更平缓的行驶速度
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
     AMap.plugin('AMap.Driving', () => {
 
-      // 天间串行：每次回调结束后再启动下一天，避免高德 QPS 打满
-      const processDay = (dayIdx: number) => {
-        if (dayIdx >= itinerary.days.length) return
+      // ══════════════════════════════════════════════════════════════
+      // 阶段一：数据预加载（完全静默，绝对不碰地图）
+      //   关键：Driving 实例不传 map 参数 → 防止其自动渲染抢占视图
+      // ══════════════════════════════════════════════════════════════
+      const pathPromises: Promise<any[]>[] = itinerary.days.map((day, dayIdx) =>
+        new Promise<any[]>((resolve) => {
+          const slots = day?.slots ?? []
 
-        const day  = itinerary.days[dayIdx]
-        const slots = day?.slots ?? []
+          if (slots.length < 2) {
+            console.log(`[AMap] 第${dayIdx + 1}天地点数不足，跳过`)
+            resolve([])
+            return
+          }
 
-        if (slots.length < 2) {
-          // 当天只有 0~1 个地点，无法规划，跳过
-          console.log(`[AMap] 第${dayIdx + 1}天地点数不足，跳过`)
-          setTimeout(() => processDay(dayIdx + 1), 100)
-          return
+          const origin: [number, number] = [
+            slots[0].place.coords.lng,
+            slots[0].place.coords.lat,
+          ]
+          const destination: [number, number] = [
+            slots[slots.length - 1].place.coords.lng,
+            slots[slots.length - 1].place.coords.lat,
+          ]
+          const waypoints = slots
+            .slice(1, -1)
+            .map((s: any) => [s.place.coords.lng, s.place.coords.lat] as [number, number])
+
+          // 关键：不传 map，静默规划，不触发任何自动渲染或 setFitView
+          const driving = new AMap.Driving({
+            hideMarkers:  true,
+            autoFitView:  false,
+          })
+          drivingInstancesRef.current.push(driving)
+
+          // 错开发起请求，每天间隔 600ms，避免触发 QPS 限制
+          setTimeout(() => {
+            driving.search(
+              origin,
+              destination,
+              { waypoints },
+              (status: string, result: any) => {
+                if (status === 'complete' && result?.routes?.[0]) {
+                  const lineArr: any[] = []
+                  result.routes[0].steps.forEach((step: any) => {
+                    if (Array.isArray(step.path) && step.path.length > 0) {
+                      step.path.forEach((pt: any) => lineArr.push(pt))
+                    }
+                  })
+                  console.log(`[AMap] 第${dayIdx + 1}天路径节点数：${lineArr.length}`)
+                  resolve(lineArr)
+                } else {
+                  console.error(`[AMap] 第${dayIdx + 1}天路线规划失败:`, status, result)
+                  resolve([])
+                }
+              }
+            )
+          }, dayIdx * 600)
+        })
+      )
+
+      // ══════════════════════════════════════════════════════════════
+      // 阶段二 & 三：Promise.all 全部到齐后，进入串行动画引擎
+      // ══════════════════════════════════════════════════════════════
+      Promise.all(pathPromises).then(async (allDaysPaths) => {
+
+        const validPaths = allDaysPaths.filter((p) => p.length >= 2)
+        if (validPaths.length === 0) return
+
+        // 数据全部就绪后，一次性绘制所有天的路线 Polyline
+        const routePolylines: any[] = []
+        allDaysPaths.forEach((path, i) => {
+          if (path.length < 2) return
+          const color = CLUSTER_COLORS[i % CLUSTER_COLORS.length]
+          const polyline = new AMap.Polyline({
+            path,
+            showDir:       true,   // 官方文档：显示方向箭头，增强引导感
+            strokeColor:   color,
+            strokeWeight:  5,
+            strokeOpacity: 0.65,
+            zIndex:        20,
+          })
+          polyline.setMap(map)
+          polylinesRef.current.push(polyline)
+          routePolylines.push(polyline)
+        })
+
+        // 整个行程共用一辆小车 + 已走轨迹灰色线
+        // 官方文档：autoRotation 不放 Marker 构造参数，放 moveAlong options 才生效
+        const carMarker = new AMap.Marker({
+          position: validPaths[0][0],
+          icon:     'https://a.amap.com/jsapi_demos/static/demo-center-v2/car.png',
+          offset:   new AMap.Pixel(-13, -26),   // 匹配图片尺寸 26×13（宽×高）
+          zIndex:   200,
+        })
+        map.add(carMarker)
+        carMarkersRef.current.push(carMarker)
+
+        const passedPolyline = new AMap.Polyline({
+          strokeColor:   '#AFB3B8',
+          strokeWeight:  6,
+          strokeOpacity: 0.9,
+          zIndex:        21,
+        })
+        passedPolyline.setMap(map)
+        polylinesRef.current.push(passedPolyline)
+
+        // ── 阶段三：严格串行动画引擎（核心）────────────────────────
+        const playAllRoutes = async () => {
+          for (const [i, path] of allDaysPaths.entries()) {
+            if (path.length < 2) continue
+
+            console.log(`[AMap] 第${i + 1}天动画开始`)
+
+            // step 1：小车归位到当天起点，初始化已走轨迹
+            carMarker.setPosition(path[0])
+            passedPolyline.setPath([path[0]])
+
+            // step 2：平滑就位 —— 单次调用同时完成飞行 + 缩放，无跳跃感
+            //   setZoomAndCenter(zoom, center, immediately, duration)
+            //   immediately=false → 使用动画过渡；duration=1000 → 1s 飞行
+            map.setZoomAndCenter(NAV_ZOOM, path[0], false, 1000)
+            map.setPitch(NAV_PITCH)   // 设定俯仰角，仅在起步前设一次
+
+            // step 3：延迟起步 —— 等相机平滑飞到起点完全稳定后再发车
+            await sleep(1200)
+
+            // step 4：防抖跟随监听
+            //   严禁在此调用 setZoom / setPitch，只允许 setCenter + setRotation
+            //   官方文档：用 e.target.getPosition() 获取位置（e.pos 为非文档属性）
+            //   setCenter 第二个参数 true = immediately，立即生效，避免插值导致帧滞后
+            const onMoving = (e: any) => {
+              if (e.passedPath?.length > 0) {
+                passedPolyline.setPath(e.passedPath)
+              }
+              map.setCenter(e.target.getPosition(), true)
+              if (e.angle != null) map.setRotation(-e.angle)
+            }
+            carMarker.on('moving', onMoving)
+
+            // step 5：启动小车
+            //   官方文档：autoRotation 必须在 moveAlong opts 里设置，Marker 构造参数无效
+            carMarker.moveAlong(path, {
+              speed:        ANIMATION_SPEED,
+              autoRotation: true,   // 官方文档规定的正确位置
+              circlable:    false,
+            })
+
+            // step 6：绝对阻塞 —— 死等这一天彻底跑完，再进入下一天
+            await new Promise<void>((resolve) => {
+              const onMoveEnd = () => {
+                carMarker.off('moveend',  onMoveEnd)
+                carMarker.off('moving',   onMoving)   // 立即解绑，防止残留帧干扰
+                resolve()
+              }
+              carMarker.on('moveend', onMoveEnd)
+            })
+
+            console.log(`[AMap] 第${i + 1}天动画完毕`)
+
+            // step 7：日间停顿
+            await sleep(800)
+          }
+
+          // ══════════════════════════════════════════════════════════
+          // 阶段四：完美收尾
+          //   先平滑重置相机姿态，再展示全局全景，避免视角突兀
+          // ══════════════════════════════════════════════════════════
+          console.log('[AMap] 全程串行动画播放完毕，重置视角')
+          map.setPitch(0,    false, 1000)   // noAnimate=false → 1000ms 平滑归零
+          map.setRotation(0, false, 1000)
+
+          await sleep(1000)   // 等归零动画结束后再缩放全景
+
+          try {
+            const allOverlays = [...markersRef.current, ...routePolylines]
+            map.setFitView(allOverlays, false, [50, 50, 50, 50])
+          } catch (_) {}
         }
 
-        // ── 解析起点、终点、途经点（[lng, lat] 数组格式）────────────
-        const origin: [number, number] = [
-          slots[0].place.coords.lng,
-          slots[0].place.coords.lat,
-        ]
-        const destination: [number, number] = [
-          slots[slots.length - 1].place.coords.lng,
-          slots[slots.length - 1].place.coords.lat,
-        ]
-        // 去掉头尾，中间 slots 转为途经点
-        const waypoints: [number, number][] = slots
-          .slice(1, -1)
-          .map((s: any) => [s.place.coords.lng, s.place.coords.lat] as [number, number])
-
-        console.log(`[AMap] 第${dayIdx + 1}天 | 起点:`, origin, '终点:', destination, '途经点:', waypoints)
-
-        // ── 每天一个 Driving 实例，传入 map 让高德自动画线 ──────────
-        const driving = new AMap.Driving({
-          map,                  // 关键：绑定地图实例，自动绘制路线
-          hideMarkers: true,    // 隐藏默认 A/B 图标，用我们自己的 Marker
-          autoFitView: false,
-        })
-        drivingInstancesRef.current.push(driving)
-
-        driving.search(
-          origin,
-          destination,
-          { waypoints },
-          (status: string, result: any) => {
-            console.log(`第${dayIdx + 1}天路线规划结果:`, status, result)
-
-            if (status === 'complete' && result?.routes?.[0]) {
-              // 提取完整路径用于小车动画
-              const fullPath: any[] = []
-              result.routes[0].steps.forEach((step: any) => {
-                if (Array.isArray(step.path)) fullPath.push(...step.path)
-              })
-
-              if (fullPath.length >= 2) {
-                const carContent = `
-                  <div style="
-                    width:30px;height:30px;
-                    background:${ROUTE_COLOR};
-                    border-radius:50%;
-                    border:2px solid #fff;
-                    box-shadow:0 2px 10px rgba(255,90,95,0.55);
-                    display:flex;align-items:center;justify-content:center;
-                    font-size:15px;line-height:1;
-                  ">🚗</div>`
-
-                const carMarker = new AMap.Marker({
-                  position: fullPath[0],
-                  content:  carContent,
-                  anchor:   'center',
-                  zIndex:   200,
-                })
-                carMarker.setMap(map)
-                carMarker.moveAlong(fullPath, {
-                  speed:       80,
-                  circlable:   true,
-                  aniInterval: 10,
-                })
-                carMarkersRef.current.push(carMarker)
-                console.log(`[AMap] 第${dayIdx + 1}天小车动画启动，路径节点数：${fullPath.length}`)
-              }
-            } else {
-              console.error(`[AMap] 第${dayIdx + 1}天路线规划失败:`, result)
-            }
-
-            // 500ms 后处理下一天
-            setTimeout(() => processDay(dayIdx + 1), 500)
-          }
-        )
-      }
-
-      processDay(0)
+        playAllRoutes()
+      })
     })
   }, [itinerary])
 

@@ -1,3 +1,9 @@
 {
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:lbs.amap.com)",
+      "WebFetch(domain:a.amap.com)"
+    ]
+  },
   "spinnerTipsEnabled": true
 }
