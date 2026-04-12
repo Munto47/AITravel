@@ -133,6 +133,52 @@ export default function RoomPage() {
     initRoom({ roomId, threadId, tripCity, tripDays })
   }, [roomId]) // eslint-disable-line
 
+  // 进入房间后自动加载推荐候选地点（美景/美食/美梦）
+  const [recommendLoaded, setRecommendLoaded] = useState(false)
+  useEffect(() => {
+    if (!roomData.loaded || recommendLoaded || places.length > 0) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/recommend`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ city: tripCity, trip_days: storeDays || tripDays }),
+        })
+        if (!res.ok) throw new Error(`${res.status}`)
+        const data = await res.json()
+        if (cancelled || !data.places?.length) return
+        data.places.forEach((raw: Record<string, unknown>) => {
+          const place = {
+            placeId: raw.place_id as string,
+            name: raw.name as string,
+            category: raw.category as string,
+            address: raw.address as string,
+            coords: raw.coords as { lng: number; lat: number },
+            city: raw.city as string,
+            district: raw.district as string | undefined,
+            source: raw.source as string,
+            amapRating: raw.amap_rating as number | undefined,
+            amapPrice: raw.amap_price as number | undefined,
+            openingHours: raw.opening_hours as string | undefined,
+            phone: raw.phone as string | undefined,
+            amapPhotos: (raw.amap_photos as string[]) || [],
+            description: raw.description as string | undefined,
+            tags: (raw.tags as string[]) || [],
+            estimatedDuration: raw.estimated_duration as number | undefined,
+          }
+          if (!places.find((p) => p.placeId === place.placeId)) {
+            addPlace(place as any)
+          }
+        })
+        setRecommendLoaded(true)
+      } catch (e) {
+        console.warn('[RoomPage] 推荐加载失败', e)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [roomData.loaded, recommendLoaded, tripCity, tripDays]) // eslint-disable-line
+
   // AI 推荐的地点自动加入工作台
   useEffect(() => {
     const lastMsg = messages[messages.length - 1]
@@ -152,6 +198,20 @@ export default function RoomPage() {
       alert('请至少心形选择 2 个地点再进行排线')
       return
     }
+
+    // 校验品类完整性：每天需要有吃、住、玩
+    const hasAttraction = selectedPlaces.some((p) => p.category === 'attraction')
+    const hasFood = selectedPlaces.some((p) => p.category === 'food')
+    const hasHotel = selectedPlaces.some((p) => p.category === 'hotel')
+    const missing: string[] = []
+    if (!hasAttraction) missing.push('景点（美景）')
+    if (!hasFood) missing.push('餐饮（美食）')
+    if (!hasHotel) missing.push('住宿（美梦）')
+    if (missing.length > 0) {
+      alert(`排线需要确保每天有吃有住有玩，当前缺少：${missing.join('、')}\n请在右侧候选地点中心形选择对应类型的地点`)
+      return
+    }
+
     setPhase('optimizing')
     await optimize(selectedPlaces, storeDays || tripDays)
     setPhase('planned')
@@ -163,7 +223,7 @@ export default function RoomPage() {
   return (
     <div className="h-screen w-screen overflow-hidden relative">
       {/* ===== Layer 0: 全屏地图底层 ===== */}
-      <AMapContainer places={places} itinerary={itinerary} />
+      <AMapContainer places={places} itinerary={itinerary} tripCity={tripCity} />
 
       {/* ===== Layer 1: 浮面板 overlay ===== */}
       <div className="overlay-layer">
