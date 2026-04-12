@@ -140,7 +140,7 @@ export function useYjsRoom(
     const placesMap = doc.getMap<YjsPlace>('places')
     const yjsPlace: YjsPlace = {
       ...place,
-      votedBy: [userId],
+      votedBy: [],      // AI 推荐进候选池，用户主动点心形才算"想去"
       addedBy: userId,
       addedAt: new Date().toISOString(),
       note: '',

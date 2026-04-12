@@ -48,6 +48,10 @@ class Place(BaseModel):
     # RAG 主观数据（无游记命中则为 None）
     rag_meta: Optional[PlaceRAGMeta] = None
 
+    # AI 生成的描述信息
+    description: Optional[str] = Field(None, description="一句话特点描述，20-40字")
+    tags: list[str] = Field(default_factory=list, description="适合人群/场景标签，如 ['情侣', '拍照', '亲子']")
+
     # Optimizer 节点写入
     cluster_id: Optional[int] = Field(None, description="K-Means 分配的日期簇 ID")
     visit_order: Optional[int] = Field(None, description="簇内 TSP 排序序号")

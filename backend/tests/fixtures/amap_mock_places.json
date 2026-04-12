@@ -14,7 +14,9 @@
       "opening_hours": "09:00-22:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 120
+      "estimated_duration": 120,
+      "description": "清末民初建筑群落，体验老成都市井文化与特色小吃的最佳去处",
+      "tags": ["文化体验", "拍照打卡", "美食街", "老少皆宜"]
     },
     {
       "place_id": "B001C8SVBG",
@@ -30,7 +32,9 @@
       "opening_hours": "08:00-18:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 120
+      "estimated_duration": 120,
+      "description": "全国唯一君臣合祀祠庙，三国文化爱好者必访之地",
+      "tags": ["历史文化", "三国迷", "亲子研学", "长辈推荐"]
     },
     {
       "place_id": "B001C8SVBH",
@@ -46,7 +50,9 @@
       "opening_hours": "08:00-22:30",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "仿古商业街，夜景灯笼氛围绝佳，适合傍晚悠闲漫步",
+      "tags": ["夜景", "情侣约会", "小吃", "拍照打卡"]
     },
     {
       "place_id": "B001C8SVBI",
@@ -62,7 +68,9 @@
       "opening_hours": "08:00-18:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 180
+      "estimated_duration": 180,
+      "description": "近距离观看大熊猫和小熊猫，建议早上8点入园避开人流",
+      "tags": ["亲子首选", "动物", "户外", "老少皆宜"]
     },
     {
       "place_id": "B001C8SVBJ",
@@ -78,7 +86,9 @@
       "opening_hours": "08:00-18:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 180
+      "estimated_duration": 180,
+      "description": "两千年历史的世界文化遗产水利工程，感受古人治水智慧",
+      "tags": ["世界遗产", "历史文化", "户外徒步", "长辈推荐"]
     },
     {
       "place_id": "B001C8SVBK",
@@ -94,7 +104,9 @@
       "opening_hours": "11:00-22:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 60
+      "estimated_duration": 60,
+      "description": "地道成都串串香老店，锅底麻辣鲜香，本地人常去的深夜食堂",
+      "tags": ["本地人推荐", "麻辣", "朋友聚餐", "深夜美食"]
     },
     {
       "place_id": "B001C8SVBL",
@@ -110,7 +122,9 @@
       "opening_hours": "09:00-17:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 60
+      "estimated_duration": 60,
+      "description": "闹市中的千年古刹，毗邻太古里，闲适与时尚的碰撞",
+      "tags": ["禅意", "免费", "拍照打卡", "小众安静"]
     },
     {
       "place_id": "B001C8SVBM",
@@ -126,7 +140,9 @@
       "opening_hours": "10:00-22:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "工业遗址改造的文创园区，涂鸦墙与音乐演出空间并存",
+      "tags": ["文艺青年", "拍照打卡", "免费", "情侣约会"]
     }
   ],
   "北京": [
@@ -144,7 +160,9 @@
       "opening_hours": "08:30-17:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 180
+      "estimated_duration": 180,
+      "description": "明清两代皇家宫殿，世界五大宫殿之首，需提前网上预约",
+      "tags": ["世界遗产", "必去", "历史文化", "亲子研学"]
     },
     {
       "place_id": "B000A7BD6U",
@@ -160,7 +178,9 @@
       "opening_hours": "全天",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 60
+      "estimated_duration": 60,
+      "description": "世界最大城市广场，看升旗仪式需凌晨排队，免费开放",
+      "tags": ["免费", "必去", "爱国教育", "老少皆宜"]
     },
     {
       "place_id": "B000A7BD6V",
@@ -176,7 +196,9 @@
       "opening_hours": "06:00-20:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 180
+      "estimated_duration": 180,
+      "description": "皇家园林博物馆，昆明湖畔赏四季风光，夏天荷花尤其美",
+      "tags": ["世界遗产", "长辈推荐", "园林", "拍照打卡"]
     },
     {
       "place_id": "B000A7BD6W",
@@ -192,7 +214,9 @@
       "opening_hours": "07:00-18:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 240
+      "estimated_duration": 240,
+      "description": "不到长城非好汉，建议乘缆车上+步行下，体力消耗适中",
+      "tags": ["世界遗产", "必去", "户外徒步", "体力挑战"]
     },
     {
       "place_id": "B000A7BD6X",
@@ -208,7 +232,9 @@
       "opening_hours": "全天",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "北京最古老的街区之一，胡同文化与创意小店交融",
+      "tags": ["文艺青年", "小吃", "胡同文化", "拍照打卡"]
     },
     {
       "place_id": "B000A7BD6Y",
@@ -224,7 +250,9 @@
       "opening_hours": "11:00-21:30",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "百年老字号烤鸭名店，皮酥肉嫩，来北京必尝的经典美食",
+      "tags": ["老字号", "必吃", "家庭聚餐", "外地游客"]
     },
     {
       "place_id": "B000A7BD6Z",
@@ -240,7 +268,9 @@
       "opening_hours": "06:00-21:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 120
+      "estimated_duration": 120,
+      "description": "明清皇帝祭天之所，祈年殿建筑之美令人叹为观止",
+      "tags": ["世界遗产", "历史文化", "晨练", "长辈推荐"]
     },
     {
       "place_id": "B000A7BD70",
@@ -256,7 +286,9 @@
       "opening_hours": "10:00-22:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "北京最潮流的商业地标，国际品牌旗舰店与网红餐厅汇聚",
+      "tags": ["购物", "年轻人", "夜生活", "情侣约会"]
     }
   ],
   "上海": [
@@ -274,7 +306,9 @@
       "opening_hours": "全天",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 120
+      "estimated_duration": 120,
+      "description": "万国建筑博览群与陆家嘴天际线隔江相望，夜景堪称一绝",
+      "tags": ["必去", "夜景", "拍照打卡", "情侣约会"]
     },
     {
       "place_id": "B00155H52G",
@@ -290,7 +324,9 @@
       "opening_hours": "08:30-17:30",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 120
+      "estimated_duration": 120,
+      "description": "江南古典园林代表，小桥流水间品味明代私家花园的精巧",
+      "tags": ["历史文化", "园林", "长辈推荐", "拍照打卡"]
     },
     {
       "place_id": "B00155H52H",
@@ -306,7 +342,9 @@
       "opening_hours": "08:00-21:30",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 120
+      "estimated_duration": 120,
+      "description": "上海地标性建筑，透明观光层俯瞰全城，含城市历史展馆",
+      "tags": ["地标", "观景", "亲子", "外地游客"]
     },
     {
       "place_id": "B00155H52I",
@@ -322,7 +360,9 @@
       "opening_hours": "10:00-23:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "石库门弄堂里的文艺天地，手工艺品店和特色咖啡馆密集",
+      "tags": ["文艺青年", "小众安静", "手工艺", "拍照打卡"]
     },
     {
       "place_id": "B00155H52J",
@@ -338,7 +378,9 @@
       "opening_hours": "09:00-21:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 480
+      "estimated_duration": 480,
+      "description": "中国内地首座迪士尼主题乐园，需要完整一天时间游玩",
+      "tags": ["亲子首选", "情侣约会", "整天行程", "提前预约"]
     },
     {
       "place_id": "B00155H52K",
@@ -354,7 +396,9 @@
       "opening_hours": "10:00-23:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "石库门建筑融合国际餐饮与酒吧，上海最具腔调的社交场所",
+      "tags": ["夜生活", "情侣约会", "国际范", "年轻人"]
     },
     {
       "place_id": "B00155H52L",
@@ -370,7 +414,9 @@
       "opening_hours": "10:00-22:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "百年商业街区，恒隆、中信泰富等高端商场云集",
+      "tags": ["购物", "年轻人", "品牌旗舰", "逛街"]
     },
     {
       "place_id": "B00155H52M",
@@ -386,7 +432,9 @@
       "opening_hours": "07:00-21:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 30
+      "estimated_duration": 30,
+      "description": "上海生煎包代表，底部焦脆汤汁鲜美，排队也值得等",
+      "tags": ["本地人推荐", "必吃", "平价美食", "老少皆宜"]
     }
   ],
   "厦门": [
@@ -404,7 +452,9 @@
       "opening_hours": "全天",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 300
+      "estimated_duration": 300,
+      "description": "万国建筑与钢琴之岛，需坐渡轮上岛，建议预留半天时间",
+      "tags": ["世界遗产", "必去", "情侣约会", "拍照打卡"]
     },
     {
       "place_id": "B023B00X8E",
@@ -420,7 +470,9 @@
       "opening_hours": "08:00-18:30",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "千年古刹依山傍海，可登山远眺厦门全景，免门票",
+      "tags": ["免费", "禅意", "登山", "长辈推荐"]
     },
     {
       "place_id": "B023B00X8F",
@@ -436,7 +488,9 @@
       "opening_hours": "全天",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "中国最美大学之一，芙蓉湖畔红墙绿瓦，需提前预约入校",
+      "tags": ["拍照打卡", "免费", "学术氛围", "提前预约"]
     },
     {
       "place_id": "B023B00X8G",
@@ -452,7 +506,9 @@
       "opening_hours": "10:00-22:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "渔村改造的文创聚落，民宿、小酒馆与手作工坊遍布巷弄",
+      "tags": ["文艺青年", "夜生活", "民宿推荐", "小吃"]
     },
     {
       "place_id": "B023B00X8H",
@@ -468,7 +524,9 @@
       "opening_hours": "全天",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 120
+      "estimated_duration": 120,
+      "description": "沿海骑行最美路线，可租双人自行车吹海风看日落",
+      "tags": ["骑行", "情侣约会", "户外", "免费"]
     },
     {
       "place_id": "B023B00X8I",
@@ -484,7 +542,9 @@
       "opening_hours": "09:00-22:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 90
+      "estimated_duration": 90,
+      "description": "百年骑楼建筑群，厦门最热闹的商业街，小吃和伴手礼集中",
+      "tags": ["购物", "小吃", "伴手礼", "老少皆宜"]
     },
     {
       "place_id": "B023B00X8J",
@@ -500,7 +560,9 @@
       "opening_hours": "06:30-14:00",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 30
+      "estimated_duration": 30,
+      "description": "藏在八市菜场的老字号，沙茶汤底浓郁鲜香，下午就关门",
+      "tags": ["本地人推荐", "必吃", "平价美食", "早起打卡"]
     },
     {
       "place_id": "B023B00X8K",
@@ -516,7 +578,9 @@
       "opening_hours": "全天",
       "phone": null,
       "amap_photos": [],
-      "estimated_duration": 120
+      "estimated_duration": 120,
+      "description": "陈嘉庚先生创办的学府群落，嘉庚建筑风格独特，游客较少",
+      "tags": ["小众安静", "历史文化", "免费", "拍照打卡"]
     }
   ]
 }

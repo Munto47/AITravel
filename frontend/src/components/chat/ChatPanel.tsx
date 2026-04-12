@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Send, Sparkles, MessageSquare } from 'lucide-react'
 
 import type { ChatMessage } from '@/types/chat'
 import MessageItem from './MessageItem'
@@ -11,6 +13,13 @@ interface ChatPanelProps {
   isStreaming: boolean
   onSend: (text: string) => void
 }
+
+const QUICK_PROMPTS = [
+  { text: '推荐适合拍照的景点', icon: '📸' },
+  { text: '有哪些必吃的美食？', icon: '🍜' },
+  { text: '适合带老人的地方', icon: '👴' },
+  { text: '文艺小众打卡地', icon: '🎨' },
+]
 
 export default function ChatPanel({ messages, isStreaming, onSend }: ChatPanelProps) {
   const [input, setInput] = useState('')
@@ -36,61 +45,95 @@ export default function ChatPanel({ messages, isStreaming, onSend }: ChatPanelPr
 
   return (
     <div className="flex flex-col h-full">
-      {/* 标题 */}
-      <div className="px-4 py-3 border-b border-gray-100">
-        <h2 className="text-sm font-semibold text-gray-700">AI 旅行顾问</h2>
-        <p className="text-xs text-gray-400 mt-0.5">描述您的需求，AI 将为您推荐合适的地点</p>
+      {/* 标题栏 */}
+      <div className="px-5 py-4 border-b border-gray-100/60 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-coral-50 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-coral-500" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">AI 旅行顾问</h2>
+            <p className="text-[11px] text-gray-400 leading-tight">描述需求，AI 推荐适合的地点</p>
+          </div>
+        </div>
       </div>
 
       {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        {messages.length === 0 && (
-          <div className="text-center text-gray-400 text-xs mt-8">
-            <p className="text-2xl mb-2">💬</p>
-            <p>试试问：</p>
-            <div className="mt-2 space-y-1">
-              {['成都有哪些适合带老人的景点？', '推荐几家特色火锅', '三天行程怎么安排？'].map((q) => (
-                <button
-                  key={q}
-                  onClick={() => onSend(q)}
-                  className="block w-full text-left text-blue-600 text-xs hover:underline px-2 py-1 rounded hover:bg-blue-50"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+        {/* 空状态：快捷提问 */}
+        <AnimatePresence>
+          {messages.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mt-8"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-coral-50 to-coral-100 flex items-center justify-center mx-auto mb-4">
+                <MessageSquare className="w-7 h-7 text-coral-400" />
+              </div>
+              <p className="text-center text-sm font-medium text-gray-500 mb-1">你好！我是你的旅行顾问</p>
+              <p className="text-center text-xs text-gray-400 mb-5">试试下面这些问题开始探索</p>
+              <div className="grid grid-cols-2 gap-2">
+                {QUICK_PROMPTS.map((q) => (
+                  <button
+                    key={q.text}
+                    onClick={() => onSend(q.text)}
+                    className="text-left text-xs text-gray-600 hover:text-coral-600
+                             px-3 py-2.5 rounded-lg
+                             bg-white/60 hover:bg-coral-50/80
+                             border border-gray-100/80 hover:border-coral-200
+                             transition-all duration-200 group"
+                  >
+                    <span className="text-base mr-1.5 group-hover:scale-110 inline-block transition-transform">
+                      {q.icon}
+                    </span>
+                    {q.text}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {messages.map((msg) => (
-          <div key={msg.messageId}>
-            {/* ThinkingSteps 只在 AI 消息前显示 */}
+        {/* 消息流 */}
+        {messages.map((msg, i) => (
+          <motion.div
+            key={msg.messageId}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: i === messages.length - 1 ? 0.05 : 0 }}
+          >
             {msg.role === 'assistant' && msg.thinkingSteps && msg.thinkingSteps.length > 0 && (
               <ThinkingSteps steps={msg.thinkingSteps} isStreaming={msg.status === 'streaming'} />
             )}
             <MessageItem message={msg} />
-          </div>
+          </motion.div>
         ))}
         <div ref={bottomRef} />
       </div>
 
-      {/* 输入框 */}
-      <div className="p-3 border-t border-gray-100">
-        <div className="flex gap-2">
+      {/* 输入区 */}
+      <div className="p-3 border-t border-gray-100/60 flex-shrink-0">
+        <div className="flex gap-2 items-end">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="输入您的需求..."
+            placeholder="描述你的旅行需求..."
             rows={2}
-            className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="input-glass flex-1 resize-none text-sm"
           />
           <button
             onClick={handleSend}
             disabled={isStreaming || !input.trim()}
-            className="self-end bg-blue-600 text-white rounded-lg px-3 py-2 text-sm hover:bg-blue-700 disabled:opacity-40 transition-colors"
+            className="btn-coral p-2.5 rounded-lg flex-shrink-0"
           >
-            发送
+            {isStreaming ? (
+              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </button>
         </div>
       </div>

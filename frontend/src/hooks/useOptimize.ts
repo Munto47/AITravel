@@ -43,6 +43,8 @@ export function useOptimize(threadId: string, roomId?: string): UseOptimizeRetur
               amap_price: p.amapPrice,
               amap_photos: p.amapPhotos,
               estimated_duration: p.estimatedDuration,
+              description: p.description,
+              tags: p.tags,
             })),
             trip_days: tripDays,
             start_date: startDate ?? null,

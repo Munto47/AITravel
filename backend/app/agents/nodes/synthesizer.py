@@ -27,10 +27,11 @@ SYNTHESIZER_PROMPT = """你是旅行规划助手。根据以下 POI 数据和游
 {rag_chunks_text}
 
 任务：
-1. 如果有游记数据，为相关 POI 提取 1-3 条避坑/推荐语
-2. 生成一段自然的推荐说明文字（150字以内，友好亲切，用中文）
-3. 必须返回合法 JSON，格式：
-   {{"response_text": "...", "place_updates": [{{"place_id": "...", "tip_snippets": [...], "sentiment_score": 0.8}}]}}
+1. 为每个 POI 生成 description（一句话特点描述，20-40字）和 tags（2-4个适合人群/场景标签，如"亲子""情侣约会""拍照打卡""本地人推荐"）
+2. 如果有游记数据，为相关 POI 提取 1-3 条避坑/推荐语
+3. 生成一段自然的推荐说明文字（150字以内，友好亲切，用中文）
+4. 必须返回合法 JSON，格式：
+   {{"response_text": "...", "place_updates": [{{"place_id": "...", "description": "...", "tags": ["...", "..."], "tip_snippets": [...], "sentiment_score": 0.8}}]}}
 不要包含任何其他文字。"""
 
 
@@ -116,13 +117,19 @@ async def run(state: AgentState) -> dict:
             for place in amap_places:
                 if place.place_id in updates:
                     u = updates[place.place_id]
-                    place = place.model_copy(update={
-                        "rag_meta": PlaceRAGMeta(
+                    update_fields = {}
+                    if u.get("tip_snippets"):
+                        update_fields["rag_meta"] = PlaceRAGMeta(
                             tip_snippets=u.get("tip_snippets", [])[:3],
                             sentiment_score=u.get("sentiment_score", 0.0),
                             source_note_ids=[c["note_id"] for c in rag_chunks if place.place_id in c.get("place_ids", [])],
                         )
-                    })
+                    if u.get("description"):
+                        update_fields["description"] = u["description"]
+                    if u.get("tags"):
+                        update_fields["tags"] = u["tags"][:4]
+                    if update_fields:
+                        place = place.model_copy(update=update_fields)
                 enriched.append(place)
 
             response_text = result.get("response_text", f"为您找到了 {len(enriched)} 个相关地点。")

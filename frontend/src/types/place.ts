@@ -32,6 +32,10 @@ export interface Place {
   // RAG 主观数据（无游记命中则为 undefined）
   ragMeta?: PlaceRAGMeta
 
+  // AI 生成的描述信息
+  description?: string          // 一句话特点描述
+  tags: string[]                // 适合人群/场景标签
+
   // Optimizer 节点填入
   clusterId?: number          // K-Means 日期簇 ID
   visitOrder?: number         // 簇内 TSP 排序序号
@@ -61,6 +65,8 @@ export function parsePlaceFromAPI(raw: Record<string, unknown>): Place {
           sourceNoteIds: (raw.rag_meta as Record<string, unknown>).source_note_ids as string[],
         }
       : undefined,
+    description: raw.description as string | undefined,
+    tags: (raw.tags as string[]) || [],
     clusterId: raw.cluster_id as number | undefined,
     visitOrder: raw.visit_order as number | undefined,
     estimatedDuration: raw.estimated_duration as number | undefined,

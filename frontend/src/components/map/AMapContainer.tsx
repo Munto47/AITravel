@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useCallback } from 'react'
-
 import type { YjsPlace } from '@/types/room'
 import type { Itinerary } from '@/types/itinerary'
 
@@ -10,16 +9,13 @@ interface AMapContainerProps {
   itinerary: Itinerary | null
 }
 
-// 每日簇对应颜色（与行程页面保持一致）
-const CLUSTER_COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#06B6D4']
+const CLUSTER_COLORS = ['#FF5A5F', '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#06B6D4']
 const CATEGORY_ICON: Record<string, string> = {
   attraction: '🏛',
   food: '🍜',
   hotel: '🏨',
   transport: '🚉',
 }
-
-// 默认中心：成都
 const DEFAULT_CENTER: [number, number] = [104.066, 30.659]
 
 declare global {
@@ -33,104 +29,70 @@ export default function AMapContainer({ places, itinerary }: AMapContainerProps)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const markersRef = useRef<any[]>([])
-  const polylinesRef = useRef<any[]>([])
+  // 存放每日的 Driving 实例，用于清除上次路线
+  const drivingInstancesRef = useRef<any[]>([])
   const infoWindowRef = useRef<any>(null)
 
-  // 初始化地图
+  // ── 初始化地图 ──────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-
     const jsKey = process.env.NEXT_PUBLIC_AMAP_JS_KEY
-    if (!jsKey) {
-      console.warn('[AMap] NEXT_PUBLIC_AMAP_JS_KEY 未配置')
-      return
-    }
+    if (!jsKey) { console.warn('[AMap] NEXT_PUBLIC_AMAP_JS_KEY 未配置'); return }
 
     let destroyed = false
-
-    const initMap = async () => {
+    ;(async () => {
       try {
         const AMapLoader = (await import('@amap/amap-jsapi-loader')).default
         const AMap = await AMapLoader.load({
           key: jsKey,
           version: '2.0',
-          plugins: ['AMap.InfoWindow'],
+          plugins: ['AMap.InfoWindow', 'AMap.Driving'],
         })
-
         if (destroyed || !containerRef.current) return
 
         const map = new AMap.Map(containerRef.current, {
           zoom: 13,
           center: DEFAULT_CENTER,
-          mapStyle: 'amap://styles/normal',
+          mapStyle: 'amap://styles/macaron',
+          viewMode: '2D',
         })
-
         mapRef.current = map
         infoWindowRef.current = new AMap.InfoWindow({
           offset: new AMap.Pixel(0, -30),
           closeWhenClickMap: true,
         })
-      } catch (e) {
-        console.error('[AMap] 初始化失败', e)
-      }
-    }
-
-    initMap()
+      } catch (e) { console.error('[AMap] 初始化失败', e) }
+    })()
 
     return () => {
       destroyed = true
-      if (mapRef.current) {
-        mapRef.current.destroy()
-        mapRef.current = null
-      }
+      if (mapRef.current) { mapRef.current.destroy(); mapRef.current = null }
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, []) // eslint-disable-line
 
-  // 更新 Marker
+  // ── 渲染 Marker ──────────────────────────────────────────────────
   const renderMarkers = useCallback(() => {
     const map = mapRef.current
     if (!map) return
-
-    // 清除旧 Marker
     markersRef.current.forEach((m) => m.setMap(null))
     markersRef.current = []
-
-    if (places.length === 0) return
+    if (!places.length) return
 
     const AMap = (window as any).AMap
     if (!AMap) return
 
-    const bounds: [number, number][] = []
-
     places.forEach((place) => {
       const { lng, lat } = place.coords
-      bounds.push([lng, lat])
-
       const isVoted = place.votedBy.length > 0
       const color = CLUSTER_COLORS[place.clusterId ?? 0] ?? '#6B7280'
       const icon = CATEGORY_ICON[place.category] ?? '📍'
 
       const markerContent = `
-        <div style="
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          cursor: pointer;
-        ">
-          <div style="
-            width: 36px; height: 36px;
-            background: ${isVoted ? color : '#9CA3AF'};
-            border-radius: 50% 50% 50% 0;
-            transform: rotate(-45deg);
-            border: 2px solid white;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          ">
-            <span style="transform: rotate(45deg); font-size: 16px;">${icon}</span>
+        <div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.25))">
+          <div style="width:40px;height:40px;background:${isVoted ? color : '#9CA3AF'};border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid white;display:flex;align-items:center;justify-content:center">
+            <span style="transform:rotate(45deg);font-size:18px">${icon}</span>
           </div>
+          <div style="margin-top:4px;background:white;border-radius:6px;padding:1px 6px;font-size:10px;font-weight:600;color:#374151;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.12);max-width:80px;overflow:hidden;text-overflow:ellipsis">${place.name}</div>
         </div>`
 
       const marker = new AMap.Marker({
@@ -142,20 +104,18 @@ export default function AMapContainer({ places, itinerary }: AMapContainerProps)
 
       marker.on('click', () => {
         const tipHtml = place.ragMeta?.tipSnippets?.[0]
-          ? `<p style="color:#92400E;font-size:11px;margin-top:4px;padding:4px 6px;background:#FEF3C7;border-radius:4px">💡 ${place.ragMeta.tipSnippets[0]}</p>`
+          ? `<p style="color:#92400E;font-size:11px;margin-top:6px;padding:6px 8px;background:#FEF3C7;border-radius:6px;line-height:1.4">💡 ${place.ragMeta.tipSnippets[0]}</p>`
           : ''
-        const ratingHtml = place.amapRating
-          ? `<span style="color:#D97706">⭐ ${place.amapRating}</span>`
+        const photoHtml = place.amapPhotos?.[0]
+          ? `<img src="${place.amapPhotos[0]}" style="width:100%;height:80px;object-fit:cover;border-radius:6px;margin-bottom:8px"/>`
           : ''
-        const priceHtml = place.amapPrice
-          ? `<span style="color:#6B7280;margin-left:8px">¥${place.amapPrice}/人</span>`
-          : ''
-
         infoWindowRef.current.setContent(`
-          <div style="min-width:180px;max-width:240px;font-family:sans-serif">
-            <p style="font-weight:600;font-size:13px;margin:0 0 2px">${place.name}</p>
-            <p style="color:#9CA3AF;font-size:11px;margin:0 0 4px">${place.address || ''}</p>
-            <div style="font-size:11px">${ratingHtml}${priceHtml}</div>
+          <div style="min-width:200px;max-width:260px;font-family:Inter,system-ui,sans-serif;padding:2px">
+            ${photoHtml}
+            <p style="font-weight:700;font-size:14px;margin:0 0 2px;color:#111827">${place.name}</p>
+            <p style="color:#9CA3AF;font-size:11px;margin:0 0 6px">${place.address || ''}</p>
+            ${place.amapRating ? `<span style="color:#D97706;font-size:12px">⭐ ${place.amapRating}</span>` : ''}
+            ${place.amapPrice ? `<span style="color:#6B7280;margin-left:8px;font-size:12px">¥${place.amapPrice}/人</span>` : ''}
             ${tipHtml}
           </div>`)
         infoWindowRef.current.open(map, marker.getPosition())
@@ -165,97 +125,110 @@ export default function AMapContainer({ places, itinerary }: AMapContainerProps)
       markersRef.current.push(marker)
     })
 
-    // 自适应显示所有地点
-    if (bounds.length > 0) {
-      map.setFitView(markersRef.current, false, [40, 40, 40, 40])
+    if (markersRef.current.length > 0) {
+      map.setFitView(markersRef.current, false, [60, 420, 60, 420])
     }
   }, [places])
 
-  // 更新行程 Polyline
-  const renderPolylines = useCallback(() => {
+  // ── 渲染真实路线（AMap.Driving） ─────────────────────────────────
+  const renderRoutes = useCallback(() => {
     const map = mapRef.current
     if (!map) return
 
-    polylinesRef.current.forEach((p) => p.setMap(null))
-    polylinesRef.current = []
+    // 清除上轮 Driving 实例
+    drivingInstancesRef.current.forEach((d) => {
+      try { d.clear() } catch (_) {}
+    })
+    drivingInstancesRef.current = []
 
     if (!itinerary) return
 
     const AMap = (window as any).AMap
-    if (!AMap) return
+    if (!AMap || !AMap.Driving) return
 
     itinerary.days.forEach((day, dayIdx) => {
       const color = CLUSTER_COLORS[dayIdx % CLUSTER_COLORS.length]
-      const path = day.slots.map((slot) => {
-        const { lng, lat } = slot.place.coords
-        return new AMap.LngLat(lng, lat)
+      const slots = day.slots
+      if (slots.length < 2) return
+
+      const start = new AMap.LngLat(slots[0].place.coords.lng, slots[0].place.coords.lat)
+      const end   = new AMap.LngLat(slots[slots.length - 1].place.coords.lng, slots[slots.length - 1].place.coords.lat)
+      const waypoints = slots.slice(1, -1).map(
+        (s) => new AMap.LngLat(s.place.coords.lng, s.place.coords.lat)
+      )
+
+      // 创建 Driving 实例，不自动渲染（autoFitView:false），我们手动绘制彩色折线
+      const driving = new AMap.Driving({
+        policy: (AMap as any).DrivingPolicy?.LEAST_TIME ?? 0,
+        autoFitView: false,
+        hideMarkers: true,
       })
 
-      if (path.length < 2) return
+      driving.search(start, end, { waypoints }, (status: string, result: any) => {
+        if (status !== 'complete' || !result?.routes?.[0]) return
 
-      const polyline = new AMap.Polyline({
-        path,
-        strokeColor: color,
-        strokeWeight: 3,
-        strokeOpacity: 0.8,
-        strokeStyle: 'solid',
-        showDir: true,
-        zIndex: 10,
+        // 拼接所有步骤的坐标点 → 真实道路路径
+        const path: any[] = []
+        result.routes[0].steps.forEach((step: any) => {
+          if (step.path) path.push(...step.path)
+        })
+
+        if (path.length < 2) return
+
+        const polyline = new AMap.Polyline({
+          path,
+          strokeColor: color,
+          strokeWeight: 5,
+          strokeOpacity: 0.85,
+          strokeStyle: 'solid',
+          showDir: true,
+          lineJoin: 'round',
+          lineCap: 'round',
+          zIndex: 20,
+        })
+        // 白色描边，视觉上更清晰
+        const outline = new AMap.Polyline({
+          path,
+          strokeColor: '#ffffff',
+          strokeWeight: 8,
+          strokeOpacity: 0.4,
+          zIndex: 19,
+        })
+        outline.setMap(map)
+        polyline.setMap(map)
+        // 保存实例以便后续清理（借用 driving 对象挂载 polylines）
+        ;(driving as any)._polylines = [outline, polyline]
+        driving.clear = () => {
+          outline.setMap(null)
+          polyline.setMap(null)
+        }
       })
-      polyline.setMap(map)
-      polylinesRef.current.push(polyline)
+
+      drivingInstancesRef.current.push(driving)
     })
   }, [itinerary])
 
-  // 地点变化时重新渲染
+  // places 变化 → 重绘 Markers
   useEffect(() => {
-    // 等待地图初始化
     if (!mapRef.current) {
-      const timer = setTimeout(renderMarkers, 1500)
-      return () => clearTimeout(timer)
+      const t = setTimeout(renderMarkers, 1500)
+      return () => clearTimeout(t)
     }
     renderMarkers()
   }, [places, renderMarkers])
 
-  // 行程变化时重新渲染
+  // itinerary 变化 → 重绘真实路线
   useEffect(() => {
     if (!mapRef.current) {
-      const timer = setTimeout(renderPolylines, 1500)
-      return () => clearTimeout(timer)
+      const t = setTimeout(renderRoutes, 1500)
+      return () => clearTimeout(t)
     }
-    renderPolylines()
-  }, [itinerary, renderPolylines])
+    renderRoutes()
+  }, [itinerary, renderRoutes])
 
   return (
-    <div className="w-full h-full rounded-xl overflow-hidden bg-gray-100 relative">
+    <div className="map-fullscreen">
       <div ref={containerRef} className="w-full h-full" />
-
-      {/* 地图图例（当有行程时显示） */}
-      {itinerary && (
-        <div className="absolute top-3 right-3 bg-white rounded-lg shadow-md p-2.5 z-10">
-          <p className="text-xs font-medium text-gray-600 mb-1.5">行程路线</p>
-          {itinerary.days.map((day, idx) => (
-            <div key={day.dayIndex} className="flex items-center gap-1.5 mb-1">
-              <div
-                className="w-6 h-1.5 rounded-full"
-                style={{ backgroundColor: CLUSTER_COLORS[idx % CLUSTER_COLORS.length] }}
-              />
-              <span className="text-xs text-gray-500">第 {day.dayIndex + 1} 天</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 地点数量统计（无行程时显示）*/}
-      {!itinerary && places.length > 0 && (
-        <div className="absolute bottom-3 left-3 bg-white bg-opacity-90 rounded-lg shadow-sm px-3 py-1.5 z-10">
-          <p className="text-xs text-gray-600">
-            已添加 <span className="font-semibold text-blue-600">{places.length}</span> 个地点
-            {places.filter((p) => p.votedBy.length > 0).length > 0 &&
-              `，已选 ${places.filter((p) => p.votedBy.length > 0).length} 个`}
-          </p>
-        </div>
-      )}
     </div>
   )
 }

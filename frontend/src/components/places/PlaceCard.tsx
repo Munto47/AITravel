@@ -1,5 +1,7 @@
 'use client'
 
+import { motion } from 'framer-motion'
+import { Star, Clock, MapPin, AlertTriangle, Heart } from 'lucide-react'
 import type { YjsPlace, RoomMember } from '@/types/room'
 
 interface PlaceCardProps {
@@ -10,6 +12,23 @@ interface PlaceCardProps {
   onRemove: (placeId: string) => void
 }
 
+const CATEGORY_CONFIG: Record<string, { label: string; icon: string; bg: string; text: string }> = {
+  attraction: { label: '景点', icon: '🏛', bg: 'bg-blue-50', text: 'text-blue-600' },
+  food:       { label: '美食', icon: '🍜', bg: 'bg-orange-50', text: 'text-orange-600' },
+  hotel:      { label: '住宿', icon: '🏨', bg: 'bg-purple-50', text: 'text-purple-600' },
+  transport:  { label: '交通', icon: '🚉', bg: 'bg-gray-100', text: 'text-gray-600' },
+}
+
+function formatDuration(mins?: number): string {
+  if (!mins) return ''
+  if (mins >= 60) {
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return m > 0 ? `${h}h${m}min` : `${h}h`
+  }
+  return `${mins}min`
+}
+
 export default function PlaceCard({
   place,
   currentUserId,
@@ -18,94 +37,172 @@ export default function PlaceCard({
   onRemove,
 }: PlaceCardProps) {
   const isVoted = place.votedBy.includes(currentUserId)
+  const voteCount = place.votedBy.length
   const votedMembers = members.filter((m) => place.votedBy.includes(m.userId))
-
-  const categoryLabel: Record<string, string> = {
-    attraction: '景点',
-    food: '餐饮',
-    hotel: '住宿',
-    transport: '交通',
-  }
+  const cat = CATEGORY_CONFIG[place.category] || CATEGORY_CONFIG.attraction
+  const hasPhoto = place.amapPhotos && place.amapPhotos.length > 0
 
   return (
-    <div className={`border rounded-xl p-3 transition-all ${isVoted ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'}`}>
-      <div className="flex items-start gap-2">
-        {/* 左侧：图片占位或第一张图片 */}
-        <div className="w-14 h-14 flex-shrink-0 rounded-lg bg-gray-100 overflow-hidden">
-          {place.amapPhotos[0] ? (
-            <img src={place.amapPhotos[0]} alt={place.name} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-2xl">
-              {place.category === 'food' ? '🍜' : place.category === 'hotel' ? '🏨' : '🏛️'}
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      whileHover={{ y: -2 }}
+      transition={{ duration: 0.2 }}
+      className={`group relative rounded-xl overflow-hidden cursor-pointer transition-all duration-200 ${
+        isVoted
+          ? 'ring-2 ring-coral-200 shadow-card-hover bg-white'
+          : 'bg-white/80 border border-gray-100/80 hover:shadow-card hover:border-gray-200/80'
+      }`}
+      onClick={() => onToggleVote(place.placeId)}
+    >
+      {/* 顶部图片区域 */}
+      {hasPhoto && (
+        <div className="relative h-28 overflow-hidden">
+          <img
+            src={place.amapPhotos[0]}
+            alt={place.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+
+          {/* 图片上的类别标签 */}
+          <div className="absolute top-2 left-2">
+            <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md backdrop-blur-sm bg-white/80 ${cat.text}`}>
+              {cat.icon} {cat.label}
+            </span>
+          </div>
+
+          {/* 选中/投票按钮 */}
+          <div className="absolute top-2 right-2">
+            <div
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200 ${
+                isVoted
+                  ? 'bg-coral-500 text-white shadow-md'
+                  : 'bg-white/80 backdrop-blur-sm text-gray-400 group-hover:text-coral-400'
+              }`}
+              onClick={(e) => { e.stopPropagation(); onToggleVote(place.placeId) }}
+            >
+              <Heart className={`w-3.5 h-3.5 ${isVoted ? 'fill-white' : ''}`} />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 内容区域 */}
+      <div className="p-3.5">
+        {/* 无图片时显示类别 + 投票 */}
+        {!hasPhoto && (
+          <div className="flex items-center justify-between mb-2">
+            <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md ${cat.bg} ${cat.text}`}>
+              {cat.icon} {cat.label}
+            </span>
+            <div
+              className={`w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200 ${
+                isVoted
+                  ? 'bg-coral-500 text-white'
+                  : 'bg-gray-100 text-gray-400 group-hover:text-coral-400 group-hover:bg-coral-50'
+              }`}
+              onClick={(e) => { e.stopPropagation(); onToggleVote(place.placeId) }}
+            >
+              <Heart className={`w-3 h-3 ${isVoted ? 'fill-white' : ''}`} />
+            </div>
+          </div>
+        )}
+
+        {/* 名称 + 评分 */}
+        <div className="flex items-center gap-2">
+          <h3 className="font-bold text-gray-900 text-sm leading-tight flex-1 truncate">{place.name}</h3>
+          {place.amapRating && (
+            <span className="text-xs text-amber-500 font-semibold flex items-center gap-0.5 flex-shrink-0">
+              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+              {place.amapRating}
+            </span>
           )}
         </div>
 
-        {/* 中间：信息 */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1">
-            <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">
-              {categoryLabel[place.category] || place.category}
-            </span>
-            {place.amapRating && (
-              <span className="text-xs text-yellow-500">★ {place.amapRating}</span>
+        {/* 描述 */}
+        {place.description && (
+          <p className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">{place.description}</p>
+        )}
+
+        {/* 标签 */}
+        {place.tags && place.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {place.tags.slice(0, 4).map((tag) => (
+              <span
+                key={tag}
+                className="text-[10px] leading-none px-1.5 py-1 rounded-md bg-gray-50 text-gray-500 border border-gray-100/80"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* 信息行：地址 + 时长 + 价格 */}
+        <div className="flex items-center gap-2 mt-2.5 text-[11px] text-gray-400">
+          <MapPin className="w-3 h-3 flex-shrink-0" />
+          <span className="truncate flex-1">{place.district || place.address}</span>
+          {place.estimatedDuration && (
+            <>
+              <span className="text-gray-200">|</span>
+              <span className="flex items-center gap-0.5 flex-shrink-0">
+                <Clock className="w-2.5 h-2.5" />
+                {formatDuration(place.estimatedDuration)}
+              </span>
+            </>
+          )}
+          {place.amapPrice && (
+            <>
+              <span className="text-gray-200">|</span>
+              <span className="flex-shrink-0">¥{place.amapPrice}/人</span>
+            </>
+          )}
+        </div>
+
+        {/* 游记攻略提示 */}
+        {place.ragMeta?.tipSnippets?.[0] && (
+          <div className="mt-2.5 flex gap-1.5 items-start bg-amber-50/60 rounded-lg px-2.5 py-2 border border-amber-100/60">
+            <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5" />
+            <p className="text-[11px] text-amber-700/80 leading-relaxed line-clamp-2">
+              {place.ragMeta.tipSnippets[0]}
+            </p>
+          </div>
+        )}
+
+        {/* 底部：投票成员头像 + 删除 */}
+        {(voteCount > 0 || place.addedBy === currentUserId) && (
+          <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-gray-100/60">
+            {votedMembers.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <div className="flex -space-x-1.5">
+                  {votedMembers.slice(0, 4).map((m) => (
+                    <div
+                      key={m.userId}
+                      title={m.nickname}
+                      className="avatar-ring text-[9px]"
+                      style={{ backgroundColor: m.color, width: 20, height: 20 }}
+                    >
+                      {m.nickname[0]}
+                    </div>
+                  ))}
+                </div>
+                <span className="text-[10px] text-gray-400">{voteCount}人想去</span>
+              </div>
             )}
-            {place.amapPrice && (
-              <span className="text-xs text-gray-400">¥{place.amapPrice}/人</span>
+            {place.addedBy === currentUserId && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRemove(place.placeId) }}
+                className="text-[10px] text-gray-300 hover:text-red-400 transition-colors ml-auto"
+              >
+                移除
+              </button>
             )}
           </div>
-          <div className="font-medium text-sm text-gray-900 mt-0.5 truncate">{place.name}</div>
-          <div className="text-xs text-gray-400 truncate">{place.address}</div>
-
-          {/* RAG 避坑提示 */}
-          {place.ragMeta?.tipSnippets?.[0] && (
-            <div className="mt-1.5 text-xs text-yellow-700 bg-yellow-50 rounded px-2 py-1 border border-yellow-100">
-              💡 {place.ragMeta.tipSnippets[0]}
-            </div>
-          )}
-
-          {/* 成员投票徽章 */}
-          {votedMembers.length > 0 && (
-            <div className="flex -space-x-1 mt-1.5">
-              {votedMembers.map((m) => (
-                <div
-                  key={m.userId}
-                  title={m.nickname}
-                  className="w-5 h-5 rounded-full border border-white flex items-center justify-center text-xs text-white"
-                  style={{ backgroundColor: m.color }}
-                >
-                  {m.nickname[0]}
-                </div>
-              ))}
-              <span className="text-xs text-gray-400 ml-1.5 self-center">
-                {votedMembers.length}人选择
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* 右侧：勾选按钮 */}
-        <button
-          onClick={() => onToggleVote(place.placeId)}
-          className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
-            isVoted
-              ? 'bg-blue-600 border-blue-600 text-white'
-              : 'border-gray-300 text-transparent hover:border-blue-400'
-          }`}
-        >
-          ✓
-        </button>
+        )}
       </div>
-
-      {/* 删除按钮（仅添加者可见）*/}
-      {place.addedBy === currentUserId && (
-        <button
-          onClick={() => onRemove(place.placeId)}
-          className="mt-2 text-xs text-gray-400 hover:text-red-500 transition-colors"
-        >
-          移除
-        </button>
-      )}
-    </div>
+    </motion.div>
   )
 }

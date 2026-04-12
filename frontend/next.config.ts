@@ -5,6 +5,13 @@ const nextConfig: NextConfig = {
   images: {
     domains: ['aos-comment.amap.com', 'p1.meituan.net'],
   },
+  // 关闭 webpack 文件系统缓存，避免 Windows 上 rename 文件锁竞争
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.cache = false
+    }
+    return config
+  },
 }
 
 export default nextConfig

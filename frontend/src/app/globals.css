@@ -1,3 +1,159 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ============================================
+   Design System: "Project Vibe"
+   珊瑚红 + 玻璃拟物态 + 全屏地图底层
+   ============================================ */
+
+@layer base {
+  :root {
+    --color-coral: 255 90 95;
+    --color-coral-light: 255 224 224;
+    --color-coral-dark: 192 53 64;
+
+    --glass-bg: rgba(255, 255, 255, 0.82);
+    --glass-bg-solid: rgba(255, 255, 255, 0.95);
+    --glass-border: rgba(255, 255, 255, 0.5);
+    --glass-blur: 16px;
+
+    --text-primary: #111827;
+    --text-secondary: #6B7280;
+    --text-tertiary: #9CA3AF;
+  }
+
+  html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    color: var(--text-primary);
+  }
+
+  .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
+}
+
+@layer components {
+  /* 玻璃拟物态面板 */
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  }
+
+  .glass-panel-solid {
+    background: var(--glass-bg-solid);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  }
+
+  /* 珊瑚红按钮 */
+  .btn-coral {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #FF5A5F;
+    color: #ffffff;
+    font-weight: 500;
+    border-radius: 8px;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  .btn-coral:hover {
+    background-color: #e04850;
+    box-shadow: 0 4px 12px rgba(255, 90, 95, 0.35);
+  }
+  .btn-coral:active { transform: scale(0.98); }
+  .btn-coral:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  /* 玻璃按钮 */
+  .btn-glass {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    color: #374151;
+    font-weight: 500;
+    border-radius: 8px;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  .btn-glass:hover {
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  .btn-glass:active { transform: scale(0.98); }
+
+  /* 头像 */
+  .avatar-ring {
+    border-radius: 9999px;
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-weight: 500;
+  }
+
+  /* 输入框 */
+  .input-glass {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(209, 213, 219, 0.7);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.875rem;
+    color: #111827;
+    outline: none;
+    transition: all 0.2s;
+  }
+  .input-glass::placeholder { color: #9CA3AF; }
+  .input-glass:focus {
+    border-color: #FF5A5F;
+    box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.12);
+  }
+}
+
+@layer utilities {
+  /* 全屏地图底层 */
+  .map-fullscreen {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+  }
+
+  /* 浮面板 overlay 层 */
+  .overlay-layer {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* 恢复子元素交互 */
+  .overlay-interactive {
+    pointer-events: auto;
+  }
+}
