@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import chat, optimize, room, recommend, weather
+from app.config import settings
 from app.db.connection import get_pool, close_pool
 from app.agents import graph as agent_graph
 
@@ -20,7 +21,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="AI 智能旅行协同规划系统",
+    title="BreezeTravel — AI 智能旅行协同规划系统",
     description="基于 LangGraph 多 Agent + Yjs 实时协同的旅行规划 MVP",
     version="1.0.0",
     lifespan=lifespan,

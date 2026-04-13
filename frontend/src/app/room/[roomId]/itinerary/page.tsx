@@ -295,7 +295,7 @@ export default function ItineraryPage() {
             ))}
 
             <p className="text-center text-[11px] text-gray-300 mt-4">
-              由 AI 智能旅行规划系统生成 · {new Date(itinerary.generatedAt).toLocaleString('zh-CN')}
+              由 BreezeTravel AI 生成 · {new Date(itinerary.generatedAt).toLocaleString('zh-CN')}
             </p>
           </>
         )}

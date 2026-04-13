@@ -140,7 +140,7 @@ export default function HomePage() {
           >
             <Compass className="w-8 h-8" strokeWidth={2} />
           </motion.div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Project Vibe</h1>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">BreezeTravel</h1>
           <p className="text-gray-400 text-sm mt-2">AI 驱动 · 多人协同 · 智能排线</p>
 
           {/* 特性标签 */}
@@ -315,7 +315,7 @@ export default function HomePage() {
 
         {/* 底部 */}
         <p className="text-center text-[11px] text-gray-300 mt-6">
-          AI 智能旅行协同规划系统 · 面试 Demo
+          BreezeTravel · AI 旅行协同规划
         </p>
       </motion.div>
     </div>

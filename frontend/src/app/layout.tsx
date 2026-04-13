@@ -9,7 +9,7 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'Project Vibe — AI 智能旅行协同规划',
+  title: 'BreezeTravel — AI 智能旅行协同规划',
   description: '基于 LangGraph 多 Agent + Yjs 实时协同的旅行规划工具',
 }
 
