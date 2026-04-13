@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     amap_mock: bool = True  # 默认 Mock，保护配额
 
     # 和风天气
-    qweather_key: str = ""
+    qweather_api_key: str = ""
 
     # 数据库
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/travel_agent"

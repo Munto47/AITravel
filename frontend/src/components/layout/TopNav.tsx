@@ -67,7 +67,7 @@ export default function TopNav({
             <Compass className="w-4.5 h-4.5 text-white" strokeWidth={2.5} />
           </div>
           <span className="font-bold text-gray-900 text-sm tracking-tight hidden lg:inline">
-            Project Vibe
+            BreezeTravel
           </span>
         </div>
 
