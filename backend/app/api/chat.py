@@ -1,14 +1,15 @@
 """
 POST /api/chat - 对话接口（SSE 流式响应）
 
-当前实现：同步版，返回 JSON（Sprint 6 升级为真实 SSE 流）
-完整 SSE 事件格式见 B.5 规格文档。
+使用 graph.astream() 实现真正的节点级流式推送：
+每个 LangGraph 节点执行完毕后立即 yield thinking/place/text 事件，
+用户可逐步看到 ThinkingSteps 亮起，而不是等待所有节点执行完毕。
+
+SSE 事件格式见 MASTER_PRD.md § 4.8。
 """
 
 import json
 import time
-import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -16,24 +17,22 @@ from langchain_core.messages import HumanMessage
 
 from app.agents.graph import get_graph_with_persistence
 from app.schemas.api import ChatRequest
-from app.config import settings
 
 router = APIRouter()
 
 
 async def _event_stream(request: ChatRequest):
-    """生成 SSE 事件流"""
+    """生成 SSE 事件流（graph.astream 节点级实时推送）"""
     graph = await get_graph_with_persistence()
     config = {"configurable": {"thread_id": request.thread_id}}
 
     start_time = time.time()
 
-    # 构建初始状态
     input_state = {
         "messages": [HumanMessage(content=request.message)],
         "thread_id": request.thread_id,
         "user_id": request.user_id,
-        "trip_city": request.trip_city,   # 目的地城市，传递给 AmapSearch 节点
+        "trip_city": request.trip_city,
         "amap_places": [],
         "rag_chunks": [],
         "synthesized_places": [],
@@ -44,43 +43,61 @@ async def _event_stream(request: ChatRequest):
         "final_response": None,
     }
 
-    # 推送 thinking 事件（Router 开始）
-    yield f"data: {json.dumps({'event': 'thinking', 'data': {'node': 'router', 'summary': '正在分析您的需求...', 'ms': 0}}, ensure_ascii=False)}\n\n"
+    # Router 节点开始前立即推送，让前端感知到 AI 已开始工作
+    yield _thinking("router", "正在分析您的需求...", 0)
+
+    places: list = []
+    response_text: str = ""
 
     try:
-        # TODO: Sprint 6 - 改为 graph.astream() 获取流式更新
-        # 当前为同步调用，获取最终结果
-        final_state = await graph.ainvoke(input_state, config=config)
+        async for chunk in graph.astream(input_state, config=config):
+            elapsed = int((time.time() - start_time) * 1000)
 
-        # 推送检索节点 thinking 事件
-        intent = final_state.get("intent", "amap")
-        if intent in ("amap", "both"):
-            amap_count = len(final_state.get("amap_places", []))
-            yield f"data: {json.dumps({'event': 'thinking', 'data': {'node': 'amap_search', 'summary': f'高德搜索到 {amap_count} 个地点', 'ms': int((time.time() - start_time) * 1000)}}, ensure_ascii=False)}\n\n"
-        if intent in ("rag", "both"):
-            rag_count = len(final_state.get("rag_chunks", []))
-            yield f"data: {json.dumps({'event': 'thinking', 'data': {'node': 'rag_retrieval', 'summary': f'检索到 {rag_count} 条游记片段', 'ms': int((time.time() - start_time) * 1000)}}, ensure_ascii=False)}\n\n"
+            # chunk 格式：{ "node_name": state_patch_dict }
+            if "router" in chunk:
+                router_state = chunk["router"]
+                intent = router_state.get("intent", "amap")
+                # Router 完成，预告下一步
+                if intent == "rag":
+                    yield _thinking("router", "意图：检索游记经验", elapsed)
+                elif intent == "both":
+                    yield _thinking("router", "意图：综合检索（高德 + 游记）", elapsed)
+                else:
+                    yield _thinking("router", "意图：搜索高德地点", elapsed)
 
-        yield f"data: {json.dumps({'event': 'thinking', 'data': {'node': 'synthesizer', 'summary': '正在整合数据，生成推荐...', 'ms': int((time.time() - start_time) * 1000)}}, ensure_ascii=False)}\n\n"
+            elif "amap_search" in chunk:
+                amap_state = chunk["amap_search"]
+                count = len(amap_state.get("amap_places", []))
+                yield _thinking("amap_search", f"高德搜索到 {count} 个地点", elapsed)
 
-        # 推送地点事件
-        places = final_state.get("synthesized_places", [])
-        for place in places:
-            yield f"data: {json.dumps({'event': 'place', 'data': {'place': place.model_dump()}}, ensure_ascii=False)}\n\n"
+            elif "rag_retrieval" in chunk:
+                rag_state = chunk["rag_retrieval"]
+                count = len(rag_state.get("rag_chunks", []))
+                yield _thinking("rag_retrieval", f"检索到 {count} 条游记片段", elapsed)
 
-        # 推送文字回复
-        response_text = final_state.get("final_response", "")
-        if response_text:
-            # 简单分词模拟流式（Sprint 6 替换为真实 LLM 流）
-            for char in response_text:
-                yield f"data: {json.dumps({'event': 'text', 'data': {'delta': char}}, ensure_ascii=False)}\n\n"
+            elif "synthesizer" in chunk:
+                synth_state = chunk["synthesizer"]
+                places = synth_state.get("synthesized_places", [])
+                response_text = synth_state.get("final_response", "")
+                yield _thinking("synthesizer", f"整合完成，推荐 {len(places)} 个地点", elapsed)
 
-        # 推送完成事件
+                # 逐个推送地点（让前端卡片逐张出现）
+                for place in places:
+                    yield f"data: {json.dumps({'event': 'place', 'data': {'place': place.model_dump()}}, ensure_ascii=False)}\n\n"
+
+                # 逐字推送文字回复
+                for char in response_text:
+                    yield f"data: {json.dumps({'event': 'text', 'data': {'delta': char}}, ensure_ascii=False)}\n\n"
+
         total_ms = int((time.time() - start_time) * 1000)
         yield f"data: {json.dumps({'event': 'done', 'data': {'total_places': len(places), 'total_ms': total_ms}}, ensure_ascii=False)}\n\n"
 
     except Exception as e:
         yield f"data: {json.dumps({'event': 'error', 'data': {'message': str(e)}}, ensure_ascii=False)}\n\n"
+
+
+def _thinking(node: str, summary: str, ms: int) -> str:
+    return f"data: {json.dumps({'event': 'thinking', 'data': {'node': node, 'summary': summary, 'ms': ms}}, ensure_ascii=False)}\n\n"
 
 
 @router.post("/chat")

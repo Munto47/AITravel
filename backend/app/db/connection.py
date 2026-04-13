@@ -1,8 +1,5 @@
 """
-asyncpg 连接池初始化
-
-TODO (Sprint 1): 配置 asyncpg 连接池
-当前为骨架，各节点直接使用 asyncpg 连接。
+asyncpg 连接池初始化，含 pgvector 自动注册。
 """
 
 import asyncpg

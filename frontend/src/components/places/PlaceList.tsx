@@ -143,6 +143,8 @@ function CandidatesPanel({
   onRemove: (id: string) => void
 }) {
   const [categoryFilter, setCategoryFilter] = useRoomCategoryFilter()
+  const { selectedPlaceId, setHoveredPlaceId } = useRoomStore()
+  const listRef = useRef<HTMLDivElement>(null)
 
   const currentTabConfig = CATEGORY_TABS.find((t) => t.key === categoryFilter)!
   const filteredPlaces = places
@@ -153,6 +155,25 @@ function CandidatesPanel({
       const bV = b.votedBy.includes(currentUserId) ? 1 : 0
       return bV - aV
     })
+
+  // Marker 点击后，自动切换到该地点所在分类，并滚动到对应卡片
+  useEffect(() => {
+    if (!selectedPlaceId) return
+    const place = places.find((p) => p.placeId === selectedPlaceId)
+    if (!place) return
+
+    // 自动切换到对应分类 tab
+    const targetTab = CATEGORY_TABS.find((t) => t.categories.includes(place.category))
+    if (targetTab && targetTab.key !== categoryFilter) {
+      setCategoryFilter(targetTab.key)
+    }
+
+    // 用 requestAnimationFrame 等待 tab 切换后再滚动
+    requestAnimationFrame(() => {
+      const card = listRef.current?.querySelector(`[data-place-id="${selectedPlaceId}"]`) as HTMLElement | null
+      card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [selectedPlaceId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -197,7 +218,7 @@ function CandidatesPanel({
       </div>
 
       {/* 地点列表 */}
-      <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2.5 scrollbar-thin">
+      <div ref={listRef} className="flex-1 overflow-y-auto px-3 pb-3 space-y-2.5 scrollbar-thin">
         <AnimatePresence mode="wait">
           {places.length === 0 ? (
             <motion.div
@@ -244,8 +265,10 @@ function CandidatesPanel({
                   place={place}
                   currentUserId={currentUserId}
                   members={members}
+                  isSelected={selectedPlaceId === place.placeId}
                   onToggleVote={onToggleVote}
                   onRemove={onRemove}
+                  onHover={setHoveredPlaceId}
                 />
               ))}
             </motion.div>
@@ -329,7 +352,7 @@ function ItineraryPanel({ itinerary }: { itinerary: Itinerary | null }) {
 }
 
 /* ─── 分类筛选状态（模块内 useState 封装） ─── */
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 function useRoomCategoryFilter() {
   return useState<CategoryFilter>('sights')
 }

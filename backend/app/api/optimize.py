@@ -19,8 +19,7 @@ async def optimize(request: OptimizeRequest):
     """
     智能排线接口。
 
-    算法：K-Means（按经纬度聚类为每日簇）+ TSP 最近邻启发式（簇内排序）
-    TODO (Sprint 4): 接入高德距离矩阵 API 获取真实驾车时间
+    算法：K-Means（按经纬度聚类为每日簇）+ 高德驾车距离矩阵 + TSP 最近邻启发式（簇内排序）
     """
     start = time.time()
 

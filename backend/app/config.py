@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # Demo 模式
     demo_mode: bool = False
 
+    # CORS — 允许的前端 Origin（正则），生产环境按实际域名覆盖
+    # 示例：https://(your-app\.vercel\.app|localhost(:\d+)?)
+    cors_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

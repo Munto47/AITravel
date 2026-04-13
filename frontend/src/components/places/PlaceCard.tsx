@@ -8,8 +8,10 @@ interface PlaceCardProps {
   place: YjsPlace
   currentUserId: string
   members: RoomMember[]
+  isSelected?: boolean
   onToggleVote: (placeId: string) => void
   onRemove: (placeId: string) => void
+  onHover?: (placeId: string | null) => void
 }
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: string; bg: string; text: string }> = {
@@ -33,8 +35,10 @@ export default function PlaceCard({
   place,
   currentUserId,
   members,
+  isSelected = false,
   onToggleVote,
   onRemove,
+  onHover,
 }: PlaceCardProps) {
   const isVoted = place.votedBy.includes(currentUserId)
   const voteCount = place.votedBy.length
@@ -50,12 +54,17 @@ export default function PlaceCard({
       exit={{ opacity: 0, scale: 0.95 }}
       whileHover={{ y: -2 }}
       transition={{ duration: 0.2 }}
+      data-place-id={place.placeId}
       className={`group relative rounded-xl overflow-hidden cursor-pointer transition-all duration-200 ${
-        isVoted
-          ? 'ring-2 ring-coral-200 shadow-card-hover bg-white'
-          : 'bg-white/80 border border-gray-100/80 hover:shadow-card hover:border-gray-200/80'
+        isSelected
+          ? 'ring-2 ring-blue-400 shadow-lg bg-white'
+          : isVoted
+            ? 'ring-2 ring-coral-200 shadow-card-hover bg-white'
+            : 'bg-white/80 border border-gray-100/80 hover:shadow-card hover:border-gray-200/80'
       }`}
       onClick={() => onToggleVote(place.placeId)}
+      onMouseEnter={() => onHover?.(place.placeId)}
+      onMouseLeave={() => onHover?.(null)}
     >
       {/* 顶部图片区域 */}
       {hasPhoto && (

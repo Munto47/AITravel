@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import type { YjsPlace } from '@/types/room'
 import type { Itinerary } from '@/types/itinerary'
+import { useRoomStore } from '@/stores/roomStore'
 
 interface AMapContainerProps {
   places: YjsPlace[]
@@ -46,10 +47,13 @@ declare global {
 export default function AMapContainer({ places, itinerary, tripCity }: AMapContainerProps) {
   const containerRef    = useRef<HTMLDivElement>(null)
   const mapRef          = useRef<any>(null)
-  const markersRef      = useRef<any[]>([])
-  const routePolylinesRef = useRef<any[]>([])   // 每次重绘前先清除
-  const drivingRef      = useRef<any[]>([])     // Driving 实例，用于 clear()
+  // key=placeId, value=marker 实例，便于 hover 联动时按 id 查找
+  const markersRef      = useRef<Map<string, any>>(new Map())
+  const routePolylinesRef = useRef<any[]>([])
+  const drivingRef      = useRef<any[]>([])
   const infoWindowRef   = useRef<any>(null)
+
+  const { setSelectedPlaceId, setHoveredPlaceId, hoveredPlaceId } = useRoomStore()
 
   // ── 初始化地图（仅运行一次）────────────────────────────────────
   useEffect(() => {
@@ -101,13 +105,35 @@ export default function AMapContainer({ places, itinerary, tripCity }: AMapConta
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── 构建 Marker HTML（抽成辅助函数，hover 时复用） ───────────────
+  const buildMarkerContent = useCallback((
+    place: YjsPlace,
+    isActive: boolean  // 是否高亮（hover 或 selected 状态）
+  ) => {
+    const isVoted = place.votedBy.length > 0
+    const color   = CLUSTER_COLORS[place.clusterId ?? 0] ?? '#6B7280'
+    const icon    = CATEGORY_ICON[place.category] ?? '📍'
+    const bgColor = isVoted ? color : '#9CA3AF'
+    const scale   = isActive ? 1.25 : 1
+    const shadow  = isActive
+      ? 'drop-shadow(0 4px 12px rgba(0,0,0,0.4))'
+      : 'drop-shadow(0 2px 6px rgba(0,0,0,0.25))'
+    return `
+      <div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;filter:${shadow};transform:scale(${scale});transform-origin:bottom center;transition:transform 0.15s,filter 0.15s">
+        <div style="width:40px;height:40px;background:${bgColor};border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:${isActive ? '3px' : '2.5px'} solid white;display:flex;align-items:center;justify-content:center">
+          <span style="transform:rotate(45deg);font-size:18px">${icon}</span>
+        </div>
+        <div style="margin-top:4px;background:${isActive ? bgColor : 'white'};color:${isActive ? 'white' : '#374151'};border-radius:6px;padding:1px 6px;font-size:10px;font-weight:600;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.12);max-width:80px;overflow:hidden;text-overflow:ellipsis">${place.name}</div>
+      </div>`
+  }, [])
+
   // ── 渲染地点 Markers ────────────────────────────────────────────
   const renderMarkers = useCallback(() => {
     const map = mapRef.current
     if (!map) return
 
     markersRef.current.forEach((m) => m.setMap(null))
-    markersRef.current = []
+    markersRef.current.clear()
     if (!places.length) return
 
     const AMap = (window as any).AMap
@@ -115,26 +141,18 @@ export default function AMapContainer({ places, itinerary, tripCity }: AMapConta
 
     places.forEach((place) => {
       const { lng, lat } = place.coords
-      const isVoted = place.votedBy.length > 0
-      const color = CLUSTER_COLORS[place.clusterId ?? 0] ?? '#6B7280'
-      const icon  = CATEGORY_ICON[place.category] ?? '📍'
-
-      const markerContent = `
-        <div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.25))">
-          <div style="width:40px;height:40px;background:${isVoted ? color : '#9CA3AF'};border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid white;display:flex;align-items:center;justify-content:center">
-            <span style="transform:rotate(45deg);font-size:18px">${icon}</span>
-          </div>
-          <div style="margin-top:4px;background:white;border-radius:6px;padding:1px 6px;font-size:10px;font-weight:600;color:#374151;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.12);max-width:80px;overflow:hidden;text-overflow:ellipsis">${place.name}</div>
-        </div>`
 
       const marker = new AMap.Marker({
         position: new AMap.LngLat(lng, lat),
-        content: markerContent,
+        content: buildMarkerContent(place, false),
         anchor: 'bottom-center',
-        zIndex: isVoted ? 100 : 50,
+        zIndex: place.votedBy.length > 0 ? 100 : 50,
       })
 
       marker.on('click', () => {
+        // 通知右侧面板高亮并滚动到该卡片
+        setSelectedPlaceId(place.placeId)
+
         const tipHtml = place.ragMeta?.tipSnippets?.[0]
           ? `<p style="color:#92400E;font-size:11px;margin-top:6px;padding:6px 8px;background:#FEF3C7;border-radius:6px;line-height:1.4">💡 ${place.ragMeta.tipSnippets[0]}</p>`
           : ''
@@ -153,14 +171,17 @@ export default function AMapContainer({ places, itinerary, tripCity }: AMapConta
         infoWindowRef.current.open(map, marker.getPosition())
       })
 
+      marker.on('mouseover', () => setHoveredPlaceId(place.placeId))
+      marker.on('mouseout',  () => setHoveredPlaceId(null))
+
       marker.setMap(map)
-      markersRef.current.push(marker)
+      markersRef.current.set(place.placeId, marker)
     })
 
-    if (markersRef.current.length > 0) {
-      map.setFitView(markersRef.current, false, [60, 420, 60, 420])
+    if (markersRef.current.size > 0) {
+      map.setFitView([...markersRef.current.values()], false, [60, 420, 60, 420])
     }
-  }, [places])
+  }, [places, buildMarkerContent, setSelectedPlaceId, setHoveredPlaceId])
 
   // ── 渲染多色静态驾车路线 ────────────────────────────────────────
   const renderRoutes = useCallback(() => {
@@ -265,6 +286,19 @@ export default function AMapContainer({ places, itinerary, tripCity }: AMapConta
     }
     renderRoutes()
   }, [itinerary, renderRoutes])
+
+  // hoveredPlaceId 变化 → 更新对应 Marker 高亮样式
+  useEffect(() => {
+    // 恢复上一个高亮 marker（遍历所有，按当前 places 状态重绘）
+    markersRef.current.forEach((marker, placeId) => {
+      const place = places.find((p) => p.placeId === placeId)
+      if (!place) return
+      const isActive = placeId === hoveredPlaceId
+      marker.setContent(buildMarkerContent(place, isActive))
+      // AMap 2.0 Marker 不暴露 setZIndex，视觉层级由 CSS scale 已体现
+      ;(marker as any).setZIndex?.(isActive ? 200 : (place.votedBy.length > 0 ? 100 : 50))
+    })
+  }, [hoveredPlaceId, places, buildMarkerContent])
 
   return (
     <div className="map-fullscreen">

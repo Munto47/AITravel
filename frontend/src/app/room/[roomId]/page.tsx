@@ -125,13 +125,18 @@ export default function RoomPage() {
   // 路线优化
   const { itinerary, isOptimizing, optimize } = useOptimize(threadId, roomId)
 
-  const { isChatOpen, tripDays: storeDays, setTripDays, setIsChatOpen } = useRoomStore()
+  const { isChatOpen, tripDays: storeDays, setTripDays, setIsChatOpen, setRightTab } = useRoomStore()
 
   // 初始化房间元数据
   useEffect(() => {
     setTripDays(tripDays)
     initRoom({ roomId, threadId, tripCity, tripDays })
   }, [roomId]) // eslint-disable-line
+
+  // 排线完成后自动切换到"已排路线" Tab
+  useEffect(() => {
+    if (itinerary) setRightTab('itinerary')
+  }, [itinerary]) // eslint-disable-line
 
   // 进入房间后自动加载推荐候选地点（美景/美食/美梦）
   const [recommendLoaded, setRecommendLoaded] = useState(false)

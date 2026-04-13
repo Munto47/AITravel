@@ -65,14 +65,14 @@ export default function HomePage() {
     )
   }
 
-  const handleCopyLink = async () => {
+  const handleCopyRoomId = async () => {
     if (!createdRoomInfo) return
-    const url = `${window.location.origin}/room/${createdRoomInfo.roomId}`
+    const roomId = createdRoomInfo.roomId
     try {
-      await navigator.clipboard.writeText(url)
+      await navigator.clipboard.writeText(roomId)
     } catch {
       const input = document.createElement('input')
-      input.value = url
+      input.value = roomId
       document.body.appendChild(input)
       input.select()
       document.execCommand('copy')
@@ -202,7 +202,8 @@ export default function HomePage() {
                       {createdRoomInfo.roomId}
                     </code>
                     <button
-                      onClick={handleCopyLink}
+                      onClick={handleCopyRoomId}
+                      title={copyTip ? '已复制！' : '复制房间号'}
                       className="btn-glass text-xs px-3 py-3 flex items-center gap-1"
                     >
                       {copyTip ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
