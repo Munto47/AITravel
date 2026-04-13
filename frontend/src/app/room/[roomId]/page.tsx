@@ -127,11 +127,32 @@ export default function RoomPage() {
 
   const { isChatOpen, tripDays: storeDays, setTripDays, setIsChatOpen, setRightTab } = useRoomStore()
 
+  // 天气数据
+  const [weather, setWeather] = useState<null | {
+    city: string
+    days: { date: string; condition: string; icon: string; temp_high: number; temp_low: number; suggestion: string }[]
+  }>(null)
+
   // 初始化房间元数据
   useEffect(() => {
     setTripDays(tripDays)
     initRoom({ roomId, threadId, tripCity, tripDays })
   }, [roomId]) // eslint-disable-line
+
+  // 城市确定后拉取天气
+  useEffect(() => {
+    if (!tripCity) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/weather?city=${encodeURIComponent(tripCity)}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (!cancelled && data) setWeather(data)
+      } catch { /* 天气获取失败静默降级 */ }
+    })()
+    return () => { cancelled = true }
+  }, [tripCity, API_BASE])
 
   // 排线完成后自动切换到"已排路线" Tab
   useEffect(() => {
@@ -265,6 +286,7 @@ export default function RoomPage() {
                 <ChatPanel
                   messages={messages}
                   isStreaming={isStreaming}
+                  weather={weather}
                   onSend={(text) =>
                     sendMessage(
                       text,

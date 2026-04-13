@@ -9,10 +9,7 @@ Router 节点：意图分类 + 查询改写
 - "amap" → 客观/属性类（找餐厅、附近景点、评分、营业时间）→ AmapSearch 节点
 - "both" → 两者都需要 → AmapSearch 节点（完成后再走 RAGRetrieval）
 
-LLM 优先级：
-1. Anthropic Claude Haiku（若 ANTHROPIC_API_KEY 有效）
-2. OpenAI 兼容接口（SiliconFlow / OpenAI，使用 llm_model_router）
-3. Demo 模式降级
+LLM：OpenAI 兼容接口（OpenAI 官方 / SiliconFlow / DeepSeek 等）
 """
 
 import json
@@ -38,24 +35,9 @@ ROUTER_SYSTEM_PROMPT = """你是一个旅行助手的意图分类器。
 不要包含任何其他文字。"""
 
 
-def _is_anthropic_key_valid() -> bool:
-    """检查 Anthropic API Key 是否像是有效 key（非占位符）"""
-    key = settings.anthropic_api_key
-    return bool(key) and key.startswith("sk-ant-") and len(key) > 30 and "your-key" not in key
-
-
 def _get_llm():
-    """
-    获取 LLM 实例：优先 Anthropic Claude Haiku，回退到 OpenAI 兼容接口。
-    """
-    if _is_anthropic_key_valid():
-        from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(
-            model="claude-haiku-4-5-20251001",
-            api_key=settings.anthropic_api_key,
-            max_tokens=200,
-        )
-    elif settings.openai_api_key:
+    """获取 LLM 实例（OpenAI 兼容接口）"""
+    if settings.openai_api_key:
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(
             model=settings.llm_model_router,
@@ -69,7 +51,6 @@ def _get_llm():
 
 async def run(state: AgentState) -> dict:
     """Router 节点入口函数"""
-    # 取最后一条用户消息
     human_messages = [m for m in state["messages"] if isinstance(m, HumanMessage)]
     if not human_messages:
         return {"intent": "amap", "query_rewrite": "旅游景点推荐"}
@@ -84,7 +65,7 @@ async def run(state: AgentState) -> dict:
     try:
         llm = _get_llm()
         if llm is None:
-            print("[Router] 无可用 LLM，回退到 amap 模式")
+            print("[Router] 未配置 OPENAI_API_KEY，回退到 amap 模式")
             return {"intent": "amap", "query_rewrite": last_query}
 
         response = await llm.ainvoke([
@@ -92,7 +73,6 @@ async def run(state: AgentState) -> dict:
             HumanMessage(content=f"目的地城市：{trip_city}\n用户问题：{last_query}"),
         ])
 
-        # 解析 JSON 响应
         raw = response.content.strip()
         json_match = re.search(r'\{.*\}', raw, re.DOTALL)
         if json_match:
@@ -102,10 +82,7 @@ async def run(state: AgentState) -> dict:
                 intent = "amap"
             rewritten = result.get("rewritten_query", last_query)
             print(f"[Router] intent={intent}, rewritten_query={rewritten}")
-            return {
-                "intent": intent,
-                "query_rewrite": rewritten,
-            }
+            return {"intent": intent, "query_rewrite": rewritten}
     except Exception as e:
         print(f"[Router] LLM 调用失败，回退到 amap：{e}")
 

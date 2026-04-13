@@ -3,11 +3,8 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    # LLM — Anthropic（可选，优先使用；未配置时自动回退到 OpenAI 兼容接口）
-    anthropic_api_key: str = ""
-
     # LLM — OpenAI 兼容接口（Router / Synthesizer / RAG Embedding）
-    # 支持 SiliconFlow / OpenAI / 其他兼容服务
+    # 支持 OpenAI 官方 / SiliconFlow / DeepSeek / 其他兼容服务
     openai_api_key: str = ""
     openai_api_url: str = "https://api.openai.com/v1"
 

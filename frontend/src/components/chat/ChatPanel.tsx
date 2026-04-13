@@ -2,15 +2,30 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Sparkles, MessageSquare } from 'lucide-react'
+import { Send, Sparkles, MessageSquare, ChevronRight } from 'lucide-react'
 
 import type { ChatMessage } from '@/types/chat'
 import MessageItem from './MessageItem'
 import ThinkingSteps from './ThinkingSteps'
 
+interface DayWeather {
+  date: string
+  condition: string
+  icon: string
+  temp_high: number
+  temp_low: number
+  suggestion: string
+}
+
+interface WeatherData {
+  city: string
+  days: DayWeather[]
+}
+
 interface ChatPanelProps {
   messages: ChatMessage[]
   isStreaming: boolean
+  weather?: WeatherData | null
   onSend: (text: string) => void
 }
 
@@ -21,7 +36,54 @@ const QUICK_PROMPTS = [
   { text: '文艺小众打卡地', icon: '🎨' },
 ]
 
-export default function ChatPanel({ messages, isStreaming, onSend }: ChatPanelProps) {
+// 天气条：显示今日 + 明日（紧凑单行）
+function WeatherBar({ weather }: { weather: WeatherData }) {
+  const today = weather.days[0]
+  const tomorrow = weather.days[1]
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      transition={{ duration: 0.3 }}
+      className="px-4 py-2 bg-gradient-to-r from-sky-50/80 to-blue-50/60 border-b border-sky-100/60 flex-shrink-0"
+    >
+      <div className="flex items-center gap-3 text-[11px]">
+        {/* 今日 */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-base leading-none">{today.icon}</span>
+          <div className="min-w-0">
+            <span className="font-semibold text-sky-700">{weather.city}</span>
+            <span className="text-sky-500 mx-1">·</span>
+            <span className="text-sky-600">{today.condition}</span>
+            <span className="text-sky-500 mx-1">
+              {today.temp_low}~{today.temp_high}°C
+            </span>
+          </div>
+        </div>
+
+        {/* 分隔 */}
+        {tomorrow && (
+          <>
+            <span className="text-sky-200 flex-shrink-0">|</span>
+            {/* 明日 */}
+            <div className="flex items-center gap-1 flex-shrink-0 text-sky-400">
+              <span className="text-sm leading-none">{tomorrow.icon}</span>
+              <span>明日 {tomorrow.condition} {tomorrow.temp_low}~{tomorrow.temp_high}°C</span>
+            </div>
+          </>
+        )}
+
+        {/* 建议 — 右侧弹性截断 */}
+        <p className="ml-auto text-sky-400 truncate hidden sm:block flex-shrink" style={{ maxWidth: '140px' }}>
+          {today.suggestion}
+        </p>
+      </div>
+    </motion.div>
+  )
+}
+
+export default function ChatPanel({ messages, isStreaming, weather, onSend }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -57,6 +119,9 @@ export default function ChatPanel({ messages, isStreaming, onSend }: ChatPanelPr
           </div>
         </div>
       </div>
+
+      {/* 天气条（有数据时显示） */}
+      {weather && weather.days.length > 0 && <WeatherBar weather={weather} />}
 
       {/* 消息列表 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">

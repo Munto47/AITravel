@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, optimize, room, recommend
+from app.api import chat, optimize, room, recommend, weather
 from app.db.connection import get_pool, close_pool
 from app.agents import graph as agent_graph
 
@@ -38,6 +38,7 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(optimize.router, prefix="/api", tags=["optimize"])
 app.include_router(room.router, prefix="/api", tags=["room"])
 app.include_router(recommend.router, prefix="/api", tags=["recommend"])
+app.include_router(weather.router, prefix="/api", tags=["weather"])
 
 
 @app.get("/health")

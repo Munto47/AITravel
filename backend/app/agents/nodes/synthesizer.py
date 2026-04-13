@@ -4,10 +4,8 @@ Synthesizer 节点：数据合并 + 回复生成
 输入：state.amap_places, state.rag_chunks
 输出：state.synthesized_places（Place 列表，含 rag_meta）, state.final_response（回复文本）
 
-LLM 优先级：
-1. Anthropic Claude Sonnet（若 ANTHROPIC_API_KEY 有效）
-2. OpenAI 兼容接口（SiliconFlow / OpenAI，使用 llm_model_synthesizer）
-3. 降级：直接返回 amap_places
+LLM：OpenAI 兼容接口（OpenAI 官方 / SiliconFlow / DeepSeek 等）
+降级：直接返回 amap_places
 """
 
 import json
@@ -35,24 +33,9 @@ SYNTHESIZER_PROMPT = """你是旅行规划助手。根据以下 POI 数据和游
 不要包含任何其他文字。"""
 
 
-def _is_anthropic_key_valid() -> bool:
-    """检查 Anthropic API Key 是否像是有效 key（非占位符）"""
-    key = settings.anthropic_api_key
-    return bool(key) and key.startswith("sk-ant-") and len(key) > 30 and "your-key" not in key
-
-
 def _get_llm():
-    """
-    获取 LLM 实例：优先 Anthropic Claude Sonnet，回退到 OpenAI 兼容接口。
-    """
-    if _is_anthropic_key_valid():
-        from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(
-            model="claude-sonnet-4-6",
-            api_key=settings.anthropic_api_key,
-            max_tokens=1000,
-        )
-    elif settings.openai_api_key:
+    """获取 LLM 实例（OpenAI 兼容接口）"""
+    if settings.openai_api_key:
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(
             model=settings.llm_model_synthesizer,
