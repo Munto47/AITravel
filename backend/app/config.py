@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     # 和风天气
     qweather_api_key: str = ""
+    qweather_api_host: str = "devapi.qweather.com"   # 免费开发版；标准版用 api.qweather.com
+    qweather_auth_type: str = "apikey"
 
     # 数据库
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/travel_agent"

@@ -24,18 +24,6 @@ const CATEGORY_ICON: Record<string, string> = {
 }
 const DEFAULT_CENTER: [number, number] = [104.066, 30.659]
 
-const CITY_CENTER: Record<string, [number, number]> = {
-  '成都': [104.066, 30.659],
-  '北京': [116.397, 39.908],
-  '上海': [121.473, 31.230],
-  '厦门': [118.089, 24.479],
-  '广州': [113.264, 23.129],
-  '深圳': [114.057, 22.543],
-  '杭州': [120.155, 30.274],
-  '西安': [108.940, 34.341],
-  '重庆': [106.551, 29.563],
-}
-
 declare global {
   interface Window {
     _AMapSecurityConfig?: { securityJsCode: string }
@@ -75,18 +63,28 @@ export default function AMapContainer({ places, itinerary, tripCity }: AMapConta
         const AMap = await AMapLoader.load({
           key: jsKey,
           version: '2.0',
-          plugins: ['AMap.InfoWindow', 'AMap.Driving'],
+          plugins: ['AMap.InfoWindow', 'AMap.Driving', 'AMap.Geocoder'],
         })
         if (destroyed || !containerRef.current) return
 
-        const cityCenter = (tripCity && CITY_CENTER[tripCity]) || DEFAULT_CENTER
         const map = new AMap.Map(containerRef.current, {
           zoom: 13,
-          center: cityCenter,
+          center: DEFAULT_CENTER,
           mapStyle: 'amap://styles/macaron',
           viewMode: '3D',
         })
         mapRef.current = map
+
+        // 通过高德 Geocoder 动态解析城市名 → 经纬度，支持全国任意城市
+        if (tripCity) {
+          const geocoder = new AMap.Geocoder({ city: tripCity })
+          geocoder.getLocation(tripCity, (status: string, result: any) => {
+            if (status === 'complete' && result.geocodes?.length > 0) {
+              map.setCenter(result.geocodes[0].location)
+            }
+          })
+        }
+
         infoWindowRef.current = new AMap.InfoWindow({
           offset: new AMap.Pixel(0, -30),
           closeWhenClickMap: true,
