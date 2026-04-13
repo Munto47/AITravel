@@ -20,8 +20,12 @@ class Settings(BaseSettings):
 
     # 和风天气
     qweather_api_key: str = ""
-    qweather_api_host: str = "devapi.qweather.com"   # 免费开发版；标准版用 api.qweather.com
-    qweather_auth_type: str = "apikey"
+    qweather_api_host: str = "devapi.qweather.com"
+    qweather_auth_type: str = "jwt"          # "jwt"（推荐）或 "apikey"
+    # JWT 凭据（Ed25519）—— 私钥存 base64 正文，代码中拼接 PEM 头尾
+    qweather_private_key: str = ""           # PKCS8 Ed25519 私钥 base64 正文
+    qweather_key_id: str = ""               # 控制台凭据 ID（kid）
+    qweather_project_id: str = ""           # 控制台项目 ID（sub）
 
     # 数据库
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/travel_agent"

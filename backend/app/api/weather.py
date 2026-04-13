@@ -1,17 +1,21 @@
 """
 GET /api/weather?city=成都 — 城市天气查询
 
-两步调用和风天气 API：
-  1. GeoAPI /geo/v2/city/lookup  城市名 → LocationID（内存缓存，避免重复查询）
-  2. /v7/weather/3d               LocationID → 3 天预报
+认证流程（优先 JWT，降级 API KEY）：
+  JWT 模式：使用 Ed25519 私钥签名生成 JWT，Authorization: Bearer <jwt>
+            无 Host 白名单限制，推荐用于服务端调用
+  API KEY 模式：X-QW-Api-Key: <key>（需控制台将 Host 设为无限制）
 
-认证方式：Authorization: Bearer {QWEATHER_API_KEY}（新版推荐，无 Host 白名单限制）
-未配置 QWEATHER_API_KEY 或城市查不到时返回 null，前端静默不显示天气条。
+天气查询两步：
+  1. GeoAPI /geo/v2/city/lookup  城市名 → LocationID（内存缓存）
+  2. /v7/weather/3d               LocationID → 3 天预报
 """
 
+import time
 from typing import Optional
 
 import aiohttp
+import jwt as pyjwt
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -19,8 +23,12 @@ from app.config import settings
 
 router = APIRouter()
 
-# 城市名 → LocationID 内存缓存（进程内有效，重启清空）
+# ── JWT 缓存（避免每次请求都重新签名） ────────────────────────────────
+_jwt_cache: dict = {"token": None, "exp": 0}
+
+# ── 城市 → LocationID 内存缓存 ─────────────────────────────────────
 _location_id_cache: dict[str, str] = {}
+
 
 WEATHER_ICON: dict[str, str] = {
     "晴":  "☀️",
@@ -62,7 +70,7 @@ class DayWeather(BaseModel):
 
 class WeatherResponse(BaseModel):
     city: str
-    days: list[DayWeather]   # 长度 1-3（今日 + 明日 + 后日）
+    days: list[DayWeather]
 
 
 def _get_icon(condition: str) -> str:
@@ -79,9 +87,53 @@ def _get_suggestion(condition: str) -> str:
     return "注意查看出行前天气预报"
 
 
+def _make_jwt() -> str:
+    """
+    用 Ed25519 私钥生成和风天气 JWT。
+    - Header:  alg=EdDSA, kid=凭据ID
+    - Payload: sub=项目ID, iat=now-30, exp=iat+900（15 分钟）
+    - 缓存至过期前 60 秒，避免频繁重签
+    """
+    now = int(time.time())
+    # 缓存未过期（剩余 > 60s）直接复用
+    if _jwt_cache["token"] and _jwt_cache["exp"] - now > 60:
+        return _jwt_cache["token"]
+
+    # 拼接 PEM（私钥 base64 正文 + 标准头尾）
+    private_key_pem = (
+        "-----BEGIN PRIVATE KEY-----\n"
+        + settings.qweather_private_key
+        + "\n-----END PRIVATE KEY-----\n"
+    )
+    iat = now - 30
+    exp = iat + 900
+
+    token: str = pyjwt.encode(
+        payload={"sub": settings.qweather_project_id, "iat": iat, "exp": exp},
+        key=private_key_pem,
+        algorithm="EdDSA",
+        headers={"kid": settings.qweather_key_id},
+    )
+    _jwt_cache["token"] = token
+    _jwt_cache["exp"] = exp
+    return token
+
+
 def _auth_headers() -> dict:
-    """构造 Bearer 认证 header，解除 Host 白名单限制。"""
-    return {"Authorization": f"Bearer {settings.qweather_api_key}"}
+    """
+    优先使用 JWT（无 Host 限制），降级到 API KEY。
+    """
+    if settings.qweather_auth_type == "jwt" and settings.qweather_private_key:
+        return {"Authorization": f"Bearer {_make_jwt()}"}
+    if settings.qweather_api_key:
+        return {"X-QW-Api-Key": settings.qweather_api_key}
+    return {}
+
+
+def _has_credentials() -> bool:
+    if settings.qweather_auth_type == "jwt":
+        return bool(settings.qweather_private_key and settings.qweather_key_id and settings.qweather_project_id)
+    return bool(settings.qweather_api_key)
 
 
 async def _lookup_location_id(city: str) -> Optional[str]:
@@ -155,9 +207,9 @@ async def get_weather(city: str = "成都"):
     """
     查询城市未来 3 天天气。
     先通过 GeoAPI 将城市名解析为 LocationID，再查天气预报。
-    未配置 QWEATHER_API_KEY 或城市/API 调用失败时返回 null，前端静默降级。
+    未配置凭据或 API 失败时返回 null，前端静默降级不显示天气条。
     """
-    if not settings.qweather_api_key:
+    if not _has_credentials():
         return None
 
     location_id = await _lookup_location_id(city)
