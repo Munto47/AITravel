@@ -1,0 +1,9 @@
+# 在 Railway 中创建 Service 时，将 Root Directory 设为 backend/（本文件所在目录）
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"

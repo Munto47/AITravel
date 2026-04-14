@@ -5,6 +5,7 @@ asyncpg 连接池初始化，含 pgvector 自动注册。
 import asyncpg
 from pgvector.asyncpg import register_vector
 from app.config import settings
+from app.db.dsn import asyncpg_dsn_and_ssl
 
 _pool = None
 
@@ -13,10 +14,11 @@ async def get_pool() -> asyncpg.Pool:
     """获取全局连接池（懒初始化）"""
     global _pool
     if _pool is None:
-        # asyncpg 使用 postgresql:// 格式（不带 +asyncpg）
-        dsn = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-        # init=register_vector 使所有连接自动支持 pgvector 类型，无需每次手动注册
-        _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10, init=register_vector)
+        dsn, ssl_arg = asyncpg_dsn_and_ssl(settings.database_url)
+        kwargs: dict = {"min_size": 2, "max_size": 10, "init": register_vector}
+        if ssl_arg is not None:
+            kwargs["ssl"] = ssl_arg
+        _pool = await asyncpg.create_pool(dsn, **kwargs)
     return _pool
 
 

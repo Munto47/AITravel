@@ -1,0 +1,10 @@
+# Root Directory 设为 frontend/；构建时在 Variables 或 Docker build-args 中注入 NEXT_PUBLIC_*
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Next.js 根路径
+healthcheckPath = "/"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"

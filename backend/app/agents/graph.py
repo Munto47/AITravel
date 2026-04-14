@@ -18,6 +18,7 @@ from langgraph.graph import StateGraph, END
 from app.agents.state import AgentState
 from app.agents.nodes import router, amap_search, rag_retrieval, synthesizer
 from app.config import settings
+from app.db.dsn import langgraph_postgres_dsn
 
 
 def _route_intent(state: AgentState) -> str:
@@ -99,8 +100,8 @@ async def init_persistent_graph():
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-        # AsyncPostgresSaver 需要纯 postgresql:// 格式（移除 SQLAlchemy driver 前缀）
-        dsn = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+        # AsyncPostgresSaver 需要 postgresql:// 格式（保留 sslmode 等参数供 psycopg 使用）
+        dsn = langgraph_postgres_dsn(settings.database_url)
         _cm = AsyncPostgresSaver.from_conn_string(dsn)
         _checkpointer = await _cm.__aenter__()  # 拿到真正的 saver 实例
         await _checkpointer.setup()             # 建 langgraph_checkpoints 等表（幂等）
